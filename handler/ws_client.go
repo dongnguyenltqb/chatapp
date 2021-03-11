@@ -8,17 +8,10 @@ import (
 	"encoding/json"
 	"gapp/logger"
 	"log"
-	"net/http"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
-
-type wsMessage struct {
-	Type string          `json:"type"`
-	Raw  json.RawMessage `json:"raw"`
-}
 
 const (
 	// Time allowed to write a message to the peer.
@@ -32,10 +25,6 @@ const (
 
 	// Maximum message size allowed from peer.
 	maxMessageSize = 512
-
-	// Message Type
-	msgJoinRoom  = "joinRoom"
-	msgLeaveRoom = "leaveRoom"
 )
 
 var (
@@ -43,14 +32,12 @@ var (
 	space   = []byte{' '}
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-}
-
 // Client is a middleman between the websocket connection and the hub.
 type Client struct {
 	hub *Hub
+
+	// Identity
+	id string
 
 	// The websocket connection.
 	conn *websocket.Conn
@@ -58,12 +45,11 @@ type Client struct {
 	// Buffered channel of outbound messages.
 	send chan []byte
 
-	// Indentify
-
-	id string
+	// Room channel event
+	roomActionChan chan wsRoomActionMessage
 
 	// Room
-	rooms []string
+	rooms map[string]bool
 }
 
 // readPump pumps messages from the websocket connection to the hub.
@@ -98,6 +84,27 @@ func (c *Client) processMsg(message []byte) {
 	if err := json.Unmarshal(message, &msg); err != nil {
 		logger.Error(err)
 		return
+	}
+	// Handle room action
+	if msg.Type == msgJoinRoom {
+		r := wsRoomActionMessage{}
+		if err := json.Unmarshal(msg.Raw, &r); err != nil {
+			return
+		}
+		c.roomActionChan <- wsRoomActionMessage{
+			Join: true,
+			Ids:  r.Ids,
+		}
+	}
+	if msg.Type == msgLeaveRoom {
+		r := wsRoomActionMessage{}
+		if err := json.Unmarshal(msg.Raw, &r); err != nil {
+			return
+		}
+		c.roomActionChan <- wsRoomActionMessage{
+			Leave: true,
+			Ids:   r.Ids,
+		}
 	}
 }
 
@@ -140,74 +147,25 @@ func (c *Client) writePump() {
 	}
 }
 
-// serveWs handles websocket requests from the peer.
-func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
-	logger := logger.Get()
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		logger.Error(err)
-		return
-	}
-	client := &Client{
-		hub:  hub,
-		conn: conn,
-		id:   uuid.New().String(),
-		send: make(chan []byte, 256),
-	}
-	client.hub.register <- client
-
-	// Allow collection of memory referenced by the caller by doing all work in
-	// new goroutines.
-	go client.writePump()
-	go client.readPump()
-}
-
-// Copyright 2013 The Gorilla WebSocket Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
-// Hub maintains the set of active clients and broadcasts messages to the
-// clients.
-type Hub struct {
-	// Registered clients.
-	clients map[*Client]bool
-
-	// Inbound messages from the clients.
-	broadcast chan []byte
-
-	// Register requests from the clients.
-	register chan *Client
-
-	// Unregister requests from clients.
-	unregister chan *Client
-}
-
-func NewHub() *Hub {
-	return &Hub{
-		broadcast:  make(chan []byte),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		clients:    make(map[*Client]bool),
-	}
-}
-
-func (h *Hub) Run() {
+func (c *Client) processRoomAction() {
+	// logger := logger.Get()
 	for {
 		select {
-		case client := <-h.register:
-			h.clients[client] = true
-		case client := <-h.unregister:
-			if _, ok := h.clients[client]; ok {
-				delete(h.clients, client)
-				close(client.send)
+		case msg, ok := <-c.roomActionChan:
+			if !ok {
+				// The hub closed the channel
+				return
 			}
-		case message := <-h.broadcast:
-			for client := range h.clients {
-				select {
-				case client.send <- message:
-				default:
-					close(client.send)
-					delete(h.clients, client)
+			if msg.Join == true {
+				for i := 0; i < len(msg.Ids); i++ {
+					id := msg.Ids[i]
+					c.rooms[id] = true
+				}
+			}
+			if msg.Leave == true {
+				for i := 0; i < len(msg.Ids); i++ {
+					id := msg.Ids[i]
+					delete(c.rooms, id)
 				}
 			}
 		}
