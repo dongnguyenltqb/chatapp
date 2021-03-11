@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: default
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gapp-deployment
+  namespace: 'default'
+  labels:
+    app: gapp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gapp
+  template:
+    metadata:
+      labels:
+        app: gapp
+    spec:
+      containers:
+        - name: gapp
+          image: gnodhn/gapp
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          resources:
+            requests:
+              cpu: '100m'
+              memory: '100Mi'
+            limits:
+              cpu: '200m'
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gapp-svc
+  namespace: 'default'
+spec:
+  type: NodePort
+  selector:
+    app: gapp
+  clusterIP: 172.20.80.82
+  ports:
+    - name: tcp8080
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+      nodePort: 30180

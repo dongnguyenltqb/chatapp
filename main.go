@@ -23,6 +23,7 @@ func main() {
 	server.GET("/", func(c *gin.Context) {
 		content, _ := os.ReadFile("index.html")
 		c.Header("content-type", "text/html")
+		c.Header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0")
 		c.String(200, string(content))
 	})
 	server.GET("/ws", func(c *gin.Context) {
