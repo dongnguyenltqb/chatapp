@@ -85,6 +85,7 @@ func (c *Client) processMsg(message []byte) {
 		logger.Error(err)
 		return
 	}
+
 	// Handle room action
 	if msg.Type == msgJoinRoom {
 		r := wsRoomActionMessage{}
@@ -105,6 +106,16 @@ func (c *Client) processMsg(message []byte) {
 			Leave: true,
 			Ids:   r.Ids,
 		}
+	}
+
+	// Handle chat message, broadcast to all connected client
+	if msg.Type == msgChat {
+		t := wsChatMessage{}
+		if err := json.Unmarshal(msg.Raw, &t); err != nil {
+			logger.Error(err)
+			return
+		}
+		c.hub.broadcast <- []byte(t.Text)
 	}
 }
 

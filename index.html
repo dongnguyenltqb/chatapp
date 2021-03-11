@@ -24,7 +24,12 @@ window.onload = function () {
         if (!msg.value) {
             return false;
         }
-        conn.send(msg.value);
+        conn.send(JSON.stringify({
+            type:"chat",
+            raw:{
+                text:msg.value
+            }
+        }))
         msg.value = "";
         return false;
     };
