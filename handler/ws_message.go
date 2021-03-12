@@ -33,9 +33,10 @@ type wsRoomIdsMessage struct {
 }
 
 type wsRoomActionMessage struct {
-	Leave bool
-	Join  bool
-	Ids   []string
+	Leave    bool
+	Join     bool
+	Ids      []string
+	MemberId string
 }
 
 type wsChatMessage struct {

@@ -7,6 +7,7 @@ package handler
 import (
 	"chatapp/logger"
 	"encoding/json"
+	"fmt"
 	"log"
 	"time"
 
@@ -46,10 +47,43 @@ type Client struct {
 	send chan []byte
 
 	// Room channel event
-	roomActionChan chan wsRoomActionMessage
+	rchan chan wsRoomActionMessage
 
 	// Room
 	rooms map[string]bool
+}
+
+// clean delete everything of client after a hour
+func (c *Client) clean() {
+	<-time.After(time.Minute)
+	close(c.send)
+	close(c.rchan)
+	c.rooms = nil
+}
+
+// roomPump pumps action for channel and process one by one
+func (c *Client) roomPump() {
+	for {
+		select {
+		case msg, ok := <-c.rchan:
+			if !ok {
+				// The hub closed the channel
+				return
+			}
+			if msg.Join == true {
+				for i := 0; i < len(msg.Ids); i++ {
+					id := msg.Ids[i]
+					c.rooms[id] = true
+				}
+			}
+			if msg.Leave == true {
+				for i := 0; i < len(msg.Ids); i++ {
+					id := msg.Ids[i]
+					delete(c.rooms, id)
+				}
+			}
+		}
+	}
 }
 
 // readPump pumps messages from the websocket connection to the hub.
@@ -73,7 +107,10 @@ func (c *Client) readPump() {
 			}
 			break
 		}
-		go c.processMsg(message)
+		// go c.processMsg(message)
+		for i := 0; i <= 10000; i++ {
+			go c.sendMsg(message)
+		}
 	}
 }
 
@@ -116,6 +153,11 @@ func (c *Client) writePump() {
 	}
 }
 
+func (c *Client) sendMsg(msg []byte) {
+	fmt.Println("sendMsg")
+	c.send <- msg
+}
+
 func (c *Client) sendMsgToRoom(roomId string, message []byte) {
 	c.hub.room <- wsMessageForRoom{
 		RoomId:  roomId,
@@ -138,31 +180,11 @@ func (c *Client) sendIdentityMsg() {
 		Raw:  b,
 	}
 	b, _ = json.Marshal(msg)
-	c.send <- b
+	go c.sendMsg(b)
 }
 
-func (c *Client) processRoomAction() {
-	for {
-		select {
-		case msg, ok := <-c.roomActionChan:
-			if !ok {
-				// The hub closed the channel
-				return
-			}
-			if msg.Join == true {
-				for i := 0; i < len(msg.Ids); i++ {
-					id := msg.Ids[i]
-					c.rooms[id] = true
-				}
-			}
-			if msg.Leave == true {
-				for i := 0; i < len(msg.Ids); i++ {
-					id := msg.Ids[i]
-					delete(c.rooms, id)
-				}
-			}
-		}
-	}
+func (c *Client) processRoomActionMsg(msg wsRoomActionMessage) {
+	c.rchan <- msg
 }
 
 // process message from readPump
@@ -180,20 +202,20 @@ func (c *Client) processMsg(message []byte) {
 		if err := json.Unmarshal(msg.Raw, &r); err != nil {
 			return
 		}
-		c.roomActionChan <- wsRoomActionMessage{
+		c.processRoomActionMsg(wsRoomActionMessage{
 			Join: true,
 			Ids:  r.Ids,
-		}
+		})
 	}
 	if msg.Type == msgLeaveRoom {
 		r := wsRoomActionMessage{}
 		if err := json.Unmarshal(msg.Raw, &r); err != nil {
 			return
 		}
-		c.roomActionChan <- wsRoomActionMessage{
+		c.processRoomActionMsg(wsRoomActionMessage{
 			Leave: true,
 			Ids:   r.Ids,
-		}
+		})
 	}
 
 	// Handle chat message, broadcast to all connected client

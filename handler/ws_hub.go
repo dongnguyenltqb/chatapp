@@ -29,18 +29,18 @@ func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	client := &Client{
-		hub:            hub,
-		conn:           conn,
-		id:             uuid.New().String(),
-		send:           make(chan []byte, 256),
-		roomActionChan: make(chan wsRoomActionMessage, 100),
-		rooms:          make(map[string]bool),
+		hub:   hub,
+		conn:  conn,
+		id:    uuid.New().String(),
+		send:  make(chan []byte, 256),
+		rchan: make(chan wsRoomActionMessage, 100),
+		rooms: make(map[string]bool),
 	}
 	client.hub.register <- client
 
 	// Allow collection of memory referenced by the caller by doing all work in
 	// new goroutines.
-	go client.processRoomAction()
+	go client.roomPump()
 	go client.writePump()
 	go client.readPump()
 	client.sendIdentityMsg()
@@ -89,16 +89,15 @@ func (h *Hub) Run() {
 		case client := <-h.unregister:
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
-				close(client.send)
-				close(client.roomActionChan)
+				go client.clean()
 			}
 		case message := <-h.broadcast:
 			for client := range h.clients {
 				select {
 				case client.send <- message:
 				default:
-					close(client.send)
 					delete(h.clients, client)
+					go client.clean()
 				}
 			}
 		case message := <-h.room:
@@ -107,8 +106,8 @@ func (h *Hub) Run() {
 					select {
 					case client.send <- message.Message:
 					default:
-						close(client.send)
 						delete(h.clients, client)
+						go client.clean()
 					}
 				}
 			}
