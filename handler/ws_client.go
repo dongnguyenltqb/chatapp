@@ -7,8 +7,6 @@ package handler
 import (
 	"chatapp/logger"
 	"encoding/json"
-	"fmt"
-	"log"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -25,7 +23,7 @@ const (
 	pingPeriod = (pongWait * 9) / 10
 
 	// Maximum message size allowed from peer.
-	maxMessageSize = 512
+	maxMessageSize = 1024 * 1024
 )
 
 var (
@@ -92,6 +90,7 @@ func (c *Client) roomPump() {
 // ensures that there is at most one reader on a connection by executing all
 // reads from this goroutine.
 func (c *Client) readPump() {
+	logger := logger.Get()
 	defer func() {
 		c.hub.unregister <- c
 		c.conn.Close()
@@ -103,14 +102,11 @@ func (c *Client) readPump() {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("error: %v", err)
+				logger.Error(err)
 			}
 			break
 		}
-		// go c.processMsg(message)
-		for i := 0; i <= 10000; i++ {
-			go c.sendMsg(message)
-		}
+		go c.processMsg(message)
 	}
 }
 
@@ -154,7 +150,6 @@ func (c *Client) writePump() {
 }
 
 func (c *Client) sendMsg(msg []byte) {
-	fmt.Println("sendMsg")
 	c.send <- msg
 }
 
@@ -185,6 +180,17 @@ func (c *Client) sendIdentityMsg() {
 
 func (c *Client) processRoomActionMsg(msg wsRoomActionMessage) {
 	c.rchan <- msg
+	for _, roomId := range msg.Ids {
+		msg.Ids = []string{roomId}
+		msg.MemberId = c.id
+		b, _ := json.Marshal(msg)
+		m := wsMessage{
+			Type: "joinRoom",
+			Raw:  b,
+		}
+		r, _ := json.Marshal(&m)
+		c.sendMsgToRoom(roomId, r)
+	}
 }
 
 // process message from readPump
@@ -243,5 +249,54 @@ func (c *Client) processMsg(message []byte) {
 			Raw:  b,
 		})
 		c.sendMsgToRoom(j.RoomId, b)
+	}
+	// Handle RTC message
+	if msg.Type == msgOffer {
+		o := wsOfferMessage{}
+		if err := json.Unmarshal(msg.Raw, &o); err != nil {
+			logger.Error(err)
+			return
+		}
+		targetId := o.TargetID
+		o.TargetID = c.id
+		b, _ := json.Marshal(o)
+		m := wsMessage{
+			Type: "offer",
+			Raw:  b,
+		}
+		b, _ = json.Marshal(m)
+		c.sendMsgToRoom(targetId, b)
+	}
+	if msg.Type == msgAnswer {
+		o := wsAnswerMessage{}
+		if err := json.Unmarshal(msg.Raw, &o); err != nil {
+			logger.Error(err)
+			return
+		}
+		targetId := o.TargetID
+		o.TargetID = c.id
+		b, _ := json.Marshal(o)
+		m := wsMessage{
+			Type: "answer",
+			Raw:  b,
+		}
+		b, _ = json.Marshal(m)
+		c.sendMsgToRoom(targetId, b)
+	}
+	if msg.Type == msgIceCandidate {
+		o := wsIceCandidateMessage{}
+		if err := json.Unmarshal(msg.Raw, &o); err != nil {
+			logger.Error(err)
+			return
+		}
+		targetId := o.TargetID
+		o.TargetID = c.id
+		b, _ := json.Marshal(o)
+		m := wsMessage{
+			Type: "icecandidate",
+			Raw:  b,
+		}
+		b, _ = json.Marshal(m)
+		c.sendMsgToRoom(targetId, b)
 	}
 }

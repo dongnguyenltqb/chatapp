@@ -33,10 +33,10 @@ type wsRoomIdsMessage struct {
 }
 
 type wsRoomActionMessage struct {
-	Leave    bool
-	Join     bool
-	Ids      []string
-	MemberId string
+	Leave    bool     `json:"leave"`
+	Join     bool     `json:"join"`
+	Ids      []string `json:"ids"`
+	MemberId string   `json:"memberId"`
 }
 
 type wsChatMessage struct {
@@ -51,6 +51,11 @@ type wsOfferMessage struct {
 type wsAnswerMessage struct {
 	TargetID string          `json:"targetId"`
 	Answer   json.RawMessage `json:"answer"`
+}
+
+type wsIceCandidateMessage struct {
+	TargetID  string          `json:"targetId"`
+	Candidate json.RawMessage `json:"candidate"`
 }
 
 type wsJoinRoomVideoCallMessage struct {

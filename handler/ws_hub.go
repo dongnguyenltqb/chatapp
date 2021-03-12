@@ -36,6 +36,7 @@ func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 		rchan: make(chan wsRoomActionMessage, 100),
 		rooms: make(map[string]bool),
 	}
+	client.rooms[client.id] = true
 	client.hub.register <- client
 
 	// Allow collection of memory referenced by the caller by doing all work in
