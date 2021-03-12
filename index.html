@@ -12,7 +12,7 @@
     const constraints = {'video':true,'audio':true}
     let localStream
     let socketId
-    let roomName="dong"
+    let roomName
     let repo ={}
 
 
@@ -31,6 +31,7 @@
                 localStream = await navigator.mediaDevices.getUserMedia(constraints);
                     document.getElementById("yourStream").srcObject = localStream
                     // emit join room event
+                    if(roomName)
                     conn.send(JSON.stringify({
                             type:"joinRoomVideoCall",
                         raw:{
@@ -60,8 +61,8 @@
                 let remoteVideo = document.getElementById(elementId);
                 if(!remoteVideo){
                     remoteVideo  = document.createElement("VIDEO")
-                    remoteVideo.setAttribute("width", "100");
-                    remoteVideo.setAttribute("height", "300");
+                    remoteVideo.setAttribute("width", "300");
+                    remoteVideo.setAttribute("height", "150");
                     remoteVideo.setAttribute("controls", "autoplay");
                     remoteVideo.setAttribute("autoplay", "autoplay");
                     document.getElementById("remoteVideos").appendChild(remoteVideo);
@@ -129,11 +130,11 @@ window.onload = function () {
             if(message.type =="chat"){
                 var item = document.createElement("div");
                 item.innerText =  message.raw.text
-                appendLog(item);
+                document.getElementById("chat").appendChild(item)
             }
             if(message.type ==="identity"){
                 var item =  document.getElementById("identity")
-                item.innerText = "User Id = "+ message.raw.clientId
+                item.innerText = "Your User Id = "+ message.raw.clientId
                 socketId =  message.raw.clientId          
             }
             if(message.type ==="joinRoom"){
@@ -209,9 +210,12 @@ window.onload = function () {
 </script>
 </head>
 <body>
-Nhap ten room :<input type="text" name="txt" value="" onchange="myFunction(this.value)">
+    <button onclick="myFunction(this)">#random</button>
+    <button onclick="myFunction(this)">#gaming</button>
+    <button onclick="myFunction(this)">#general</button>
 <script>
-function myFunction(val) {
+function myFunction(e) {
+        let val = e.textContent
         document.getElementById('tenroomdangjoin').innerHTML = "may dang join room  => "+val;
         roomName = val
         conn.send(JSON.stringify({
@@ -226,17 +230,18 @@ function myFunction(val) {
 }
 </script>
 
-<p id ="tenroomdangjoin">  :</p>
-
+<p id ="tenroomdangjoin"> Current room:</p>
     <div>
-        <p id = "identity"> User Id : null</p>
+        <p id = "identity"> Your: null</p>
         <button onclick="openMediaDevices()">
             Start
         </button>
-        <video id ="yourStream" width="100" height="50" controls autoplay></video>
+        <video id ="yourStream" width="300" height="200" controls autoplay  muted></video>
     </div>
     <div id ="remoteVideos">
-        <h1> List video nay la cua mot ai khac</h1>
+        <p> List video nay la cua mot ai khac</p>
+    </div>
+    <div id="chat">
     </div>
         <form id="form">
         <input type="submit" value="Send" />

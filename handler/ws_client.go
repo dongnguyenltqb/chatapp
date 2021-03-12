@@ -228,7 +228,9 @@ func (c *Client) processMsg(message []byte) {
 	if msg.Type == msgChat {
 		b, _ := json.Marshal(msg)
 		for roomId := range c.rooms {
-			go c.sendMsgToRoom(roomId, b)
+			if roomId != c.id {
+				go c.sendMsgToRoom(roomId, b)
+			}
 		}
 	}
 
