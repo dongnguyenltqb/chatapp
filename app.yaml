@@ -43,7 +43,7 @@ spec:
   type: NodePort
   selector:
     app: chatapp
-  clusterIP: 172.20.80.82
+  clusterIP: 172.20.80.81
   ports:
     - name: tcp8080
       protocol: TCP

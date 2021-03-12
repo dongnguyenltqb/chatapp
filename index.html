@@ -4,7 +4,6 @@
 <head>
 <title>chatapp</title>
 <script type="text/javascript">
-window.onload = function () {
     // for rtc
     let iceCfg ={
         iceServers: [
@@ -15,8 +14,35 @@ window.onload = function () {
     let socketId
     let roomName="dong"
     let repo ={}
+
+
     // for ws connection
     var conn;
+    const openMediaDevices = async () =>  {
+        try {
+            console.log("openMediaDevices run :",Object.keys(repo))
+            for(let memberId of Object.keys(repo)) 
+                removeMember(memberId)
+                localStream = await navigator.mediaDevices.getUserMedia(constraints);
+                    document.getElementById("yourStream").srcObject = localStream
+                    // emit join room event
+                    conn.send(JSON.stringify({
+                            type:"joinRoomVideoCall",
+                        raw:{
+                            roomId :roomName
+                        }
+                    }))
+
+        }
+        catch(err){
+            console.log(err)
+            return null
+        }
+    }
+
+
+
+window.onload = function () {
     var msg = document.getElementById("msg");
     var log = document.getElementById("log");
 
@@ -75,6 +101,21 @@ window.onload = function () {
 </script>
 </head>
 <body>
+Nhap ten room :<input type="text" name="txt" value="" onchange="myFunction(this.value)">
+<script>
+function myFunction(val) {
+        document.getElementById('tenroomdangjoin').innerHTML = "may dang join room  => "+val;
+        conn.send(JSON.stringify({
+                type:"joinRoom",
+                raw:{
+                        ids:[val]
+                    }
+            }))
+}
+</script>
+
+<p id ="tenroomdangjoin">  :</p>
+
     <div>
         <p id = "identity"> User Id : null</p>
         <button onclick="openMediaDevices()">

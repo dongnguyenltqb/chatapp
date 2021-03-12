@@ -56,8 +56,11 @@ type Hub struct {
 	// Registered clients.
 	clients map[*Client]bool
 
-	// Inbound messages from the clients.
+	// Outbound messages
 	broadcast chan []byte
+
+	// Outbound message for a specific room
+	room chan wsMessageForRoom
 
 	// Register requests from the clients.
 	register chan *Client
@@ -70,6 +73,7 @@ type Hub struct {
 func NewHub() *Hub {
 	return &Hub{
 		broadcast:  make(chan []byte),
+		room:       make(chan wsMessageForRoom),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		clients:    make(map[*Client]bool),
@@ -95,6 +99,17 @@ func (h *Hub) Run() {
 				default:
 					close(client.send)
 					delete(h.clients, client)
+				}
+			}
+		case message := <-h.room:
+			for client := range h.clients {
+				if client.rooms[message.RoomId] {
+					select {
+					case client.send <- message.Message:
+					default:
+						close(client.send)
+						delete(h.clients, client)
+					}
 				}
 			}
 		}

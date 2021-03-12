@@ -77,43 +77,6 @@ func (c *Client) readPump() {
 	}
 }
 
-// process message from readPump
-func (c *Client) processMsg(message []byte) {
-	logger := logger.Get()
-	msg := wsMessage{}
-	if err := json.Unmarshal(message, &msg); err != nil {
-		logger.Error(err)
-		return
-	}
-
-	// Handle room action
-	if msg.Type == msgJoinRoom {
-		r := wsRoomActionMessage{}
-		if err := json.Unmarshal(msg.Raw, &r); err != nil {
-			return
-		}
-		c.roomActionChan <- wsRoomActionMessage{
-			Join: true,
-			Ids:  r.Ids,
-		}
-	}
-	if msg.Type == msgLeaveRoom {
-		r := wsRoomActionMessage{}
-		if err := json.Unmarshal(msg.Raw, &r); err != nil {
-			return
-		}
-		c.roomActionChan <- wsRoomActionMessage{
-			Leave: true,
-			Ids:   r.Ids,
-		}
-	}
-
-	// Handle chat message, broadcast to all connected client
-	if msg.Type == msgChat {
-		c.hub.broadcast <- message
-	}
-}
-
 // writePump pumps messages from the hub to the websocket connection.
 //
 // A goroutine running writePump is started for each connection. The
@@ -153,6 +116,17 @@ func (c *Client) writePump() {
 	}
 }
 
+func (c *Client) sendMsgToRoom(roomId string, message []byte) {
+	c.hub.room <- wsMessageForRoom{
+		RoomId:  roomId,
+		Message: message,
+	}
+}
+
+func (c *Client) broadcastMsg(msg []byte) {
+	c.hub.broadcast <- msg
+}
+
 func (c *Client) sendIdentityMsg() {
 	// Emit clientId to front end
 	clientId := wsIdentityMessage{
@@ -168,7 +142,6 @@ func (c *Client) sendIdentityMsg() {
 }
 
 func (c *Client) processRoomAction() {
-	// logger := logger.Get()
 	for {
 		select {
 		case msg, ok := <-c.roomActionChan:
@@ -189,5 +162,64 @@ func (c *Client) processRoomAction() {
 				}
 			}
 		}
+	}
+}
+
+// process message from readPump
+func (c *Client) processMsg(message []byte) {
+	logger := logger.Get()
+	msg := wsMessage{}
+	if err := json.Unmarshal(message, &msg); err != nil {
+		logger.Error(err)
+		return
+	}
+
+	// Handle room action
+	if msg.Type == msgJoinRoom {
+		r := wsRoomActionMessage{}
+		if err := json.Unmarshal(msg.Raw, &r); err != nil {
+			return
+		}
+		c.roomActionChan <- wsRoomActionMessage{
+			Join: true,
+			Ids:  r.Ids,
+		}
+	}
+	if msg.Type == msgLeaveRoom {
+		r := wsRoomActionMessage{}
+		if err := json.Unmarshal(msg.Raw, &r); err != nil {
+			return
+		}
+		c.roomActionChan <- wsRoomActionMessage{
+			Leave: true,
+			Ids:   r.Ids,
+		}
+	}
+
+	// Handle chat message, broadcast to all connected client
+	if msg.Type == msgChat {
+		b, _ := json.Marshal(msg)
+		for roomId := range c.rooms {
+			go c.sendMsgToRoom(roomId, b)
+		}
+	}
+
+	// Handle join room video call
+	if msg.Type == msgJoinRoomVideoCall {
+		j := wsJoinRoomVideoCallMessage{}
+		if err := json.Unmarshal(msg.Raw, &j); err != nil {
+			logger.Error(err)
+			return
+		}
+		j.MemberId = c.id
+		b, _ := json.Marshal(wsJoinRoomVideoCallMessage{
+			RoomId:   j.RoomId,
+			MemberId: c.id,
+		})
+		b, _ = json.Marshal(wsMessage{
+			Type: msgJoinRoomVideoCall,
+			Raw:  b,
+		})
+		c.sendMsgToRoom(j.RoomId, b)
 	}
 }

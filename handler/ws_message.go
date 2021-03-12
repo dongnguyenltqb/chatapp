@@ -4,18 +4,24 @@ import "encoding/json"
 
 const (
 	// Message Type
-	msgJoinRoom     = "joinRoom"
-	msgLeaveRoom    = "leaveRoom"
-	msgIdentity     = "identity"
-	msgChat         = "chat"
-	msgOffer        = "offer"
-	msgAnswer       = "answer"
-	msgIceCandidate = "icecandidate"
+	msgJoinRoom          = "joinRoom"
+	msgLeaveRoom         = "leaveRoom"
+	msgIdentity          = "identity"
+	msgChat              = "chat"
+	msgOffer             = "offer"
+	msgAnswer            = "answer"
+	msgIceCandidate      = "icecandidate"
+	msgJoinRoomVideoCall = "joinRoomVideoCall"
 )
 
 type wsMessage struct {
 	Type string          `json:"type"`
 	Raw  json.RawMessage `json:"raw"`
+}
+
+type wsMessageForRoom struct {
+	RoomId  string
+	Message []byte
 }
 
 type wsIdentityMessage struct {
@@ -44,4 +50,9 @@ type wsOfferMessage struct {
 type wsAnswerMessage struct {
 	TargetID string          `json:"targetId"`
 	Answer   json.RawMessage `json:"answer"`
+}
+
+type wsJoinRoomVideoCallMessage struct {
+	RoomId   string `json:"roomId"`
+	MemberId string `json:"memberId"`
 }
