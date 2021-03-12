@@ -1,9 +1,9 @@
 package main
 
 import (
-	"gapp/entity"
-	"gapp/handler"
-	"gapp/logger"
+	"chatapp/entity"
+	"chatapp/handler"
+	"chatapp/logger"
 	"os"
 
 	"github.com/gin-gonic/gin"

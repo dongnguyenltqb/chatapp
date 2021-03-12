@@ -5,8 +5,8 @@
 package handler
 
 import (
+	"chatapp/logger"
 	"encoding/json"
-	"gapp/logger"
 	"log"
 	"time"
 
@@ -110,12 +110,7 @@ func (c *Client) processMsg(message []byte) {
 
 	// Handle chat message, broadcast to all connected client
 	if msg.Type == msgChat {
-		t := wsChatMessage{}
-		if err := json.Unmarshal(msg.Raw, &t); err != nil {
-			logger.Error(err)
-			return
-		}
-		c.hub.broadcast <- []byte(t.Text)
+		c.hub.broadcast <- message
 	}
 }
 
@@ -156,6 +151,20 @@ func (c *Client) writePump() {
 			}
 		}
 	}
+}
+
+func (c *Client) sendIdentityMsg() {
+	// Emit clientId to front end
+	clientId := wsIdentityMessage{
+		ClientId: c.id,
+	}
+	b, _ := json.Marshal(clientId)
+	msg := wsMessage{
+		Type: msgIdentity,
+		Raw:  b,
+	}
+	b, _ = json.Marshal(msg)
+	c.send <- b
 }
 
 func (c *Client) processRoomAction() {

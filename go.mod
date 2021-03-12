@@ -1,4 +1,4 @@
-module gapp
+module chatapp
 
 go 1.16
 

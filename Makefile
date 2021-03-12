@@ -1,10 +1,14 @@
 default: build delivery deploy
 
 build:
-	@docker build -t gapp .
-	@docker tag gapp gnodhn/gapp:latest
+	@docker build -t chatapp .
+	@docker tag chatapp gnodhn/chatapp:latest
 delivery:
-	@docker push gnodhn/gapp:latest
+	@docker push gnodhn/chatapp:latest
 deploy:
 	@kubectl apply -f app.yaml
-	@kubectl rollout restart deployments/gapp-deployment
+	@kubectl rollout restart deployments/chatapp-deployment
+
+dev:
+	@go build
+	@./chatapp

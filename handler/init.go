@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"gapp/entity"
+	"chatapp/entity"
 
 	"github.com/sirupsen/logrus"
 )

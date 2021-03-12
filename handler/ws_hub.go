@@ -5,7 +5,7 @@
 package handler
 
 import (
-	"gapp/logger"
+	"chatapp/logger"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -20,7 +20,7 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// serveWs handles websocket requests from the peer.
+// ServeWs handles websocket requests from the peer.
 func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	logger := logger.Get()
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -43,6 +43,7 @@ func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 	go client.processRoomAction()
 	go client.writePump()
 	go client.readPump()
+	client.sendIdentityMsg()
 }
 
 // Copyright 2013 The Gorilla WebSocket Authors. All rights reserved.
@@ -65,6 +66,7 @@ type Hub struct {
 	unregister chan *Client
 }
 
+// NewHub return a new hub for a specific enpoint
 func NewHub() *Hub {
 	return &Hub{
 		broadcast:  make(chan []byte),
@@ -74,6 +76,7 @@ func NewHub() *Hub {
 	}
 }
 
+// Run the hub
 func (h *Hub) Run() {
 	for {
 		select {
