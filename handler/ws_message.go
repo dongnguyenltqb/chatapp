@@ -20,8 +20,8 @@ type wsMessage struct {
 }
 
 type wsMessageForRoom struct {
-	RoomId  string
-	Message []byte
+	RoomId  string `json:"roomId"`
+	Message []byte `json:"message"`
 }
 
 type wsIdentityMessage struct {

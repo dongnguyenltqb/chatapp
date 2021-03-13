@@ -71,13 +71,17 @@ func (c *Client) roomPump() {
 			if msg.Join == true {
 				for i := 0; i < len(msg.Ids); i++ {
 					id := msg.Ids[i]
+					c.hub.Lock()
 					c.rooms[id] = true
+					c.hub.Unlock()
 				}
 			}
 			if msg.Leave == true {
 				for i := 0; i < len(msg.Ids); i++ {
 					id := msg.Ids[i]
+					c.hub.Lock()
 					delete(c.rooms, id)
+					c.hub.Unlock()
 				}
 			}
 		}

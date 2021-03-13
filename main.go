@@ -3,11 +3,12 @@ package main
 import (
 	"chatapp/entity"
 	"chatapp/handler"
+	"chatapp/infra"
 	"chatapp/logger"
 	"os"
 
 	"github.com/gin-contrib/sessions"
-	"github.com/gin-contrib/sessions/cookie"
+	"github.com/gin-contrib/sessions/redis"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
@@ -19,13 +20,15 @@ func init() {
 }
 
 func main() {
+	infra.Setup()
+
 	app := &handler.App{
 		Logger: logger.Get(),
 		User:   entity.User{},
 	}
 
 	server := gin.Default()
-	store := cookie.NewStore([]byte(os.Getenv("session_secret")))
+	store, _ := redis.NewStore(10, "tcp", os.Getenv("redis_addr"), os.Getenv("redis_password"), []byte(os.Getenv("session_secret")))
 	server.Use(sessions.Sessions("mysession", store))
 
 	// Spin ws handler
