@@ -31,6 +31,7 @@ func main() {
 	// Init ws handler
 	hub := handler.GetHub()
 
+	gin.SetMode(os.Getenv("GIN_MODE"))
 	server := gin.Default()
 	// Setup session storage
 	store, _ := redis.NewStore(10, "tcp", os.Getenv("redis_addr"), os.Getenv("redis_password"), []byte(os.Getenv("session_secret")))
@@ -42,12 +43,15 @@ func main() {
 		c.Header("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0")
 		c.String(200, string(content))
 	})
-	server.GET("/login", app.Login)
-	server.GET("/login/callback", app.LoginCallback)
 	server.GET("/ws", func(c *gin.Context) {
 		handler.ServeWs(hub, c.Writer, c.Request)
 	})
-	server.GET("/users/bySession/", app.GetBySession)
-	server.GET("/users/byId/:id", app.GetUserByID)
-	server.Run()
+
+	server.GET("/login", app.Login)
+	server.GET("/login/callback", app.LoginCallback)
+	// server.GET("/users/bySession/", app.GetBySession)
+	// server.GET("/users/byId/:id", app.GetUserByID)
+	if err := server.Run(); err != nil {
+		panic(err)
+	}
 }

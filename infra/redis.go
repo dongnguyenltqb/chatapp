@@ -8,11 +8,11 @@ import (
 	"github.com/go-redis/redis/v8"
 )
 
-var once sync.Once
+var onceSetupRedis sync.Once
 var rdb *redis.Client
 
 func GetRedis() *redis.Client {
-	once.Do(func() {
+	onceSetupRedis.Do(func() {
 		db, _ := strconv.Atoi(os.Getenv("redis_db"))
 		rdb = redis.NewClient(&redis.Options{
 			Addr:     os.Getenv("redis_addr"),
