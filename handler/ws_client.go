@@ -8,7 +8,6 @@ import (
 	"chatapp/util/logger"
 	"encoding/json"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -26,6 +25,9 @@ const (
 
 	// Maximum message size allowed from peer.
 	maxMessageSize = 1024 * 1024
+
+	// Max room size
+	maxRoomSize = 100
 )
 
 var (
@@ -35,7 +37,6 @@ var (
 
 // Client is a middleman between the websocket connection and the hub.
 type Client struct {
-	mu  sync.Mutex
 	hub *Hub
 
 	// Identity
@@ -51,7 +52,7 @@ type Client struct {
 	rchan chan wsRoomActionMessage
 
 	// Room
-	rooms map[string]bool
+	rooms []string
 }
 
 // clean delete everything of client after a hour
@@ -74,17 +75,13 @@ func (c *Client) roomPump() {
 			if msg.Join == true {
 				for i := 0; i < len(msg.Ids); i++ {
 					id := msg.Ids[i]
-					c.mu.Lock()
-					c.rooms[id] = true
-					c.mu.Unlock()
+					c.join(id)
 				}
 			}
 			if msg.Leave == true {
 				for i := 0; i < len(msg.Ids); i++ {
 					id := msg.Ids[i]
-					c.mu.Lock()
-					delete(c.rooms, id)
-					c.mu.Unlock()
+					c.leave(id)
 				}
 			}
 		}
@@ -154,6 +151,40 @@ func (c *Client) writePump() {
 			}
 		}
 	}
+}
+
+func (c *Client) join(roomId string) {
+	n := len(c.rooms)
+	ok := false
+	for i := 0; i < n; i++ {
+		if c.rooms[i] == roomId {
+			ok = true
+		}
+	}
+	if ok == false {
+		c.rooms = append(c.rooms, roomId)
+	}
+}
+
+func (c *Client) leave(roomId string) {
+	n := len(c.rooms)
+	r := make([]string, n)
+	for i := 0; i < n; i++ {
+		if c.rooms[i] != roomId {
+			r = append(r, c.rooms[i])
+		}
+	}
+	c.rooms = r
+}
+
+func (c *Client) exist(roomId string) bool {
+	n := len(c.rooms)
+	for i := 0; i < n; i++ {
+		if c.rooms[i] == roomId {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Client) sendMsg(msg []byte) {
@@ -234,7 +265,7 @@ func (c *Client) processMsg(message []byte) {
 	// Handle chat message, broadcast to all connected client
 	if msg.Type == msgChat {
 		b, _ := json.Marshal(msg)
-		for roomId := range c.rooms {
+		for _, roomId := range c.rooms {
 			if roomId != c.id {
 				go c.sendMsgToRoom(roomId, b)
 			}
