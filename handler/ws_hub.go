@@ -38,9 +38,9 @@ func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 		id:    uuid.New().String(),
 		send:  make(chan []byte, 256),
 		rchan: make(chan wsRoomActionMessage, 100),
-		rooms: make(map[string]bool),
+		rooms: make([]string, maxRoomSize),
 	}
-	client.rooms[client.id] = true
+	client.rooms = []string{client.id}
 	client.hub.register <- client
 
 	// Allow collection of memory referenced by the caller by doing all work in
@@ -86,10 +86,12 @@ var onceInitHub sync.Once
 // GetHub return singleton hub
 func GetHub() *Hub {
 	onceInitHub.Do(func() {
-		psbcchan := "chatappbroadcastchan"
-		psroomchan := "chatapproomchan"
-		subroom := infra.GetRedis().Subscribe(context.Background(), "chatapproomchan")
-		subbroadcast := infra.GetRedis().Subscribe(context.Background(), "chatapproomchan")
+		psroomchan := "chat_app_room_chan"
+		psbcchan := "chat_app_broadcast_chan"
+
+		subroom := infra.GetRedis().Subscribe(context.Background(), "chat_app_room_chan")
+		subbroadcast := infra.GetRedis().Subscribe(context.Background(), "chat_app_broadcast_chan")
+
 		hub = &Hub{
 			broadcast:        make(chan []byte),
 			room:             make(chan wsMessageForRoom),
@@ -125,7 +127,7 @@ func (h *Hub) run() {
 				logger.Error(err)
 			}
 			for client := range h.clients {
-				ok := client.rooms[message.RoomId]
+				ok := client.exist(message.RoomId)
 				if ok {
 					select {
 					case client.send <- message.Message:
@@ -142,8 +144,9 @@ func (h *Hub) run() {
 				logger.Error(err)
 			}
 			if m.AppName != os.Getenv("app_name") {
+				logger.Info(string(m.Message))
 				for client := range h.clients {
-					ok := client.rooms[m.RoomId]
+					ok := client.exist(m.RoomId)
 					if ok {
 						select {
 						case client.send <- m.Message:
