@@ -7,10 +7,10 @@ import (
 )
 
 var logger *logrus.Logger
-var once sync.Once
+var onceInitLogger sync.Once
 
 func Get() *logrus.Logger {
-	once.Do(func() {
+	onceInitLogger.Do(func() {
 		logger = logrus.New()
 		logger.SetFormatter(&logrus.JSONFormatter{
 			FieldMap: logrus.FieldMap{

@@ -218,6 +218,7 @@ function myFunction(e) {
         let val = e.textContent
         document.getElementById('tenroomdangjoin').innerHTML = "may dang join room  => "+val;
         roomName = val
+        ## for(let i=0;i<=1000;i++)
         conn.send(JSON.stringify({
                 type:"joinRoom",
                 raw:{

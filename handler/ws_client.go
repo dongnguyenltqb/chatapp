@@ -5,8 +5,10 @@
 package handler
 
 import (
-	"chatapp/logger"
+	"chatapp/util/logger"
 	"encoding/json"
+	"os"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -33,6 +35,7 @@ var (
 
 // Client is a middleman between the websocket connection and the hub.
 type Client struct {
+	mu  sync.Mutex
 	hub *Hub
 
 	// Identity
@@ -71,17 +74,17 @@ func (c *Client) roomPump() {
 			if msg.Join == true {
 				for i := 0; i < len(msg.Ids); i++ {
 					id := msg.Ids[i]
-					c.hub.Lock()
+					c.mu.Lock()
 					c.rooms[id] = true
-					c.hub.Unlock()
+					c.mu.Unlock()
 				}
 			}
 			if msg.Leave == true {
 				for i := 0; i < len(msg.Ids); i++ {
 					id := msg.Ids[i]
-					c.hub.Lock()
+					c.mu.Lock()
 					delete(c.rooms, id)
-					c.hub.Unlock()
+					c.mu.Unlock()
 				}
 			}
 		}
@@ -159,6 +162,7 @@ func (c *Client) sendMsg(msg []byte) {
 
 func (c *Client) sendMsgToRoom(roomId string, message []byte) {
 	c.hub.room <- wsMessageForRoom{
+		AppName: os.Getenv("app_name"),
 		RoomId:  roomId,
 		Message: message,
 	}
@@ -169,7 +173,6 @@ func (c *Client) broadcastMsg(msg []byte) {
 }
 
 func (c *Client) sendIdentityMsg() {
-	// Emit clientId to front end
 	clientId := wsIdentityMessage{
 		ClientId: c.id,
 	}

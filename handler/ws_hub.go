@@ -6,10 +6,11 @@ package handler
 
 import (
 	"chatapp/infra"
-	"chatapp/logger"
+	"chatapp/util/logger"
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
 	"sync"
 
 	"github.com/go-redis/redis/v8"
@@ -27,10 +28,8 @@ var upgrader = websocket.Upgrader{
 
 // ServeWs handles websocket requests from the peer.
 func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
-	logger := logger.Get()
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		logger.Error(err)
 		return
 	}
 	client := &Client{
@@ -59,7 +58,6 @@ func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 // Hub maintains the set of active clients and broadcasts messages to the
 // clients.
 type Hub struct {
-	sync.Mutex
 	// Registered clients.
 	clients map[*Client]bool
 
@@ -82,27 +80,33 @@ type Hub struct {
 	subbroadcastchan <-chan *redis.Message
 }
 
-// NewHub return a new hub for a specific enpoint
-func NewHub() *Hub {
-	psbcchan := "chatappbroadcastchan"
-	psroomchan := "chatapproomchan"
-	subroom := infra.GetRedis().Subscribe(context.Background(), "chatapproomchan")
-	subbroadcast := infra.GetRedis().Subscribe(context.Background(), "chatapproomchan")
-	return &Hub{
-		broadcast:        make(chan []byte),
-		room:             make(chan wsMessageForRoom),
-		register:         make(chan *Client),
-		unregister:       make(chan *Client),
-		clients:          make(map[*Client]bool),
-		psbcchan:         psbcchan,
-		psroomchan:       psroomchan,
-		subroomchan:      subroom.Channel(),
-		subbroadcastchan: subbroadcast.Channel(),
-	}
+var hub *Hub
+var onceInitHub sync.Once
+
+// GetHub return singleton hub
+func GetHub() *Hub {
+	onceInitHub.Do(func() {
+		psbcchan := "chatappbroadcastchan"
+		psroomchan := "chatapproomchan"
+		subroom := infra.GetRedis().Subscribe(context.Background(), "chatapproomchan")
+		subbroadcast := infra.GetRedis().Subscribe(context.Background(), "chatapproomchan")
+		hub = &Hub{
+			broadcast:        make(chan []byte),
+			room:             make(chan wsMessageForRoom),
+			register:         make(chan *Client),
+			unregister:       make(chan *Client),
+			clients:          make(map[*Client]bool),
+			psbcchan:         psbcchan,
+			psroomchan:       psroomchan,
+			subroomchan:      subroom.Channel(),
+			subbroadcastchan: subbroadcast.Channel(),
+		}
+		go hub.run()
+	})
+	return hub
 }
 
-// Run the hub
-func (h *Hub) Run() {
+func (h *Hub) run() {
 	logger := logger.Get()
 	for {
 		select {
@@ -120,24 +124,35 @@ func (h *Hub) Run() {
 			if err := infra.GetRedis().Publish(context.Background(), h.psroomchan, b).Err(); err != nil {
 				logger.Error(err)
 			}
+			for client := range h.clients {
+				ok := client.rooms[message.RoomId]
+				if ok {
+					select {
+					case client.send <- message.Message:
+					default:
+						delete(h.clients, client)
+						go client.clean()
+					}
+				}
+			}
 		// Two pubsub channel for receiving message from other node
 		case message := <-h.subroomchan:
 			m := wsMessageForRoom{}
 			if err := json.Unmarshal([]byte(message.Payload), &m); err != nil {
 				logger.Error(err)
 			}
-			for client := range h.clients {
-				h.Lock()
-				ok := client.rooms[m.RoomId]
-				if ok {
-					select {
-					case client.send <- m.Message:
-					default:
-						delete(h.clients, client)
-						go client.clean()
+			if m.AppName != os.Getenv("app_name") {
+				for client := range h.clients {
+					ok := client.rooms[m.RoomId]
+					if ok {
+						select {
+						case client.send <- m.Message:
+						default:
+							delete(h.clients, client)
+							go client.clean()
+						}
 					}
 				}
-				h.Unlock()
 			}
 		case message := <-h.subbroadcastchan:
 			for client := range h.clients {

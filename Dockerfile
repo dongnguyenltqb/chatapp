@@ -9,4 +9,5 @@ RUN apk --no-cache add ca-certificates
 WORKDIR /chatapp
 COPY --from=builder /chatapp/chatapp .
 COPY --from=builder /chatapp/index.html .
+COPY --from=builder /chatapp/.env .
 CMD ["./chatapp"]  

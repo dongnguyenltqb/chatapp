@@ -20,6 +20,7 @@ type wsMessage struct {
 }
 
 type wsMessageForRoom struct {
+	AppName string `json:"appName"`
 	RoomId  string `json:"roomId"`
 	Message []byte `json:"message"`
 }

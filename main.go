@@ -4,7 +4,7 @@ import (
 	"chatapp/entity"
 	"chatapp/handler"
 	"chatapp/infra"
-	"chatapp/logger"
+	"chatapp/util/logger"
 	"os"
 
 	"github.com/gin-contrib/sessions"
@@ -20,20 +20,21 @@ func init() {
 }
 
 func main() {
+	// Setup infra
 	infra.Setup()
 
+	// Init app handler
 	app := &handler.App{
 		Logger: logger.Get(),
 		User:   entity.User{},
 	}
+	// Init ws handler
+	hub := handler.GetHub()
 
 	server := gin.Default()
+	// Setup session storage
 	store, _ := redis.NewStore(10, "tcp", os.Getenv("redis_addr"), os.Getenv("redis_password"), []byte(os.Getenv("session_secret")))
 	server.Use(sessions.Sessions("mysession", store))
-
-	// Spin ws handler
-	hub := handler.NewHub()
-	go hub.Run()
 
 	server.GET("/", func(c *gin.Context) {
 		content, _ := os.ReadFile("index.html")

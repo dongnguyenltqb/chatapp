@@ -46,7 +46,6 @@ func (app *App) GetUserByID(c *gin.Context) {
 
 // Login by google
 func (app *App) Login(c *gin.Context) {
-	app.Logger.Info(cfg)
 	url := getConf().AuthCodeURL("login")
 	c.Redirect(301, url)
 }

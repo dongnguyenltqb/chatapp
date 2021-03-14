@@ -22,12 +22,12 @@ type HandlerResp struct {
 	Message string      `json:"message"`
 }
 
-var cfg *oauth2.Config
-var once sync.Once
+var oauth2Cfg *oauth2.Config
+var onceInitOauth2Cfg sync.Once
 
 func getConf() *oauth2.Config {
-	once.Do(func() {
-		cfg = &oauth2.Config{
+	onceInitOauth2Cfg.Do(func() {
+		oauth2Cfg = &oauth2.Config{
 			ClientID:     os.Getenv("google_client_id"),
 			ClientSecret: os.Getenv("google_client_secret"),
 			RedirectURL:  os.Getenv("google_redirect_url"),
@@ -37,5 +37,5 @@ func getConf() *oauth2.Config {
 			Endpoint: google.Endpoint,
 		}
 	})
-	return cfg
+	return oauth2Cfg
 }
