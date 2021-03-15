@@ -216,17 +216,28 @@ window.onload = function () {
 <script>
 function myFunction(e) {
         let val = e.textContent
+    
+        conn.send(JSON.stringify({
+                type:"leaveRoom",
+                raw:{
+                        ids:["#random","#gaming","#general"]
+                    }
+            }))
         document.getElementById('tenroomdangjoin').innerHTML = "may dang join room  => "+val;
         roomName = val
-        for(let i=0;i<=1000;i++)
+        // for(let i=1;i<=1000;i++)
+        setTimeout(()=>{
         conn.send(JSON.stringify({
                 type:"joinRoom",
                 raw:{
                         ids:[val]
                     }
-            }))
+        })),
+    openMediaDevices()
 
-        openMediaDevices()
+
+            },1000)
+
 
 }
 </script>

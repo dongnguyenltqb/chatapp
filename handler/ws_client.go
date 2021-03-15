@@ -7,7 +7,6 @@ package handler
 import (
 	"chatapp/util/logger"
 	"encoding/json"
-	"os"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -168,7 +167,7 @@ func (c *Client) join(roomId string) {
 
 func (c *Client) leave(roomId string) {
 	n := len(c.rooms)
-	r := make([]string, n)
+	r := make([]string, 0)
 	for i := 0; i < n; i++ {
 		if c.rooms[i] != roomId {
 			r = append(r, c.rooms[i])
@@ -192,15 +191,11 @@ func (c *Client) sendMsg(msg []byte) {
 }
 
 func (c *Client) sendMsgToRoom(roomId string, message []byte) {
-	c.hub.room <- wsMessageForRoom{
-		AppName: os.Getenv("app_name"),
-		RoomId:  roomId,
-		Message: message,
-	}
+	c.hub.sendMsgToRoom(roomId, message)
 }
 
 func (c *Client) broadcastMsg(msg []byte) {
-	c.hub.broadcast <- msg
+	c.hub.broadcastMsg(msg)
 }
 
 func (c *Client) sendIdentityMsg() {
@@ -217,17 +212,29 @@ func (c *Client) sendIdentityMsg() {
 }
 
 func (c *Client) processRoomActionMsg(msg wsRoomActionMessage) {
+	// process leave/join
 	c.rchan <- msg
+
+	// prepare message to send to each group
+	msg.MemberId = c.id
+	msgType := msgJoinRoom
+	if msg.Leave == true {
+		msgType = msgLeaveRoom
+	}
+	// Loop and send mesage for each room
 	for _, roomId := range msg.Ids {
 		msg.Ids = []string{roomId}
-		msg.MemberId = c.id
 		b, _ := json.Marshal(msg)
 		m := wsMessage{
-			Type: "joinRoom",
+			Type: msgType,
 			Raw:  b,
 		}
 		r, _ := json.Marshal(&m)
 		c.sendMsgToRoom(roomId, r)
+		// if message type is leave, emit to this guy
+		if msgType == msgLeaveRoom {
+			c.sendMsgToRoom(c.id, r)
+		}
 	}
 }
 

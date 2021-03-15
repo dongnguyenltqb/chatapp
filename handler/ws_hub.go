@@ -26,14 +26,14 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// ServeWs handles websocket requests from the peer.
-func ServeWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
+// 	serveWs handles websocket requests from the peer.
+func (h *Hub) serveWs(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
 	client := &Client{
-		hub:   hub,
+		hub:   h,
 		conn:  conn,
 		id:    uuid.New().String(),
 		send:  make(chan []byte, 256),
@@ -83,8 +83,8 @@ type Hub struct {
 var hub *Hub
 var onceInitHub sync.Once
 
-// GetHub return singleton hub
-func GetHub() *Hub {
+// getHub return singleton hub
+func getHub() *Hub {
 	onceInitHub.Do(func() {
 		psroomchan := "chat_app_room_chan"
 		psbcchan := "chat_app_broadcast_chan"
@@ -108,6 +108,18 @@ func GetHub() *Hub {
 	return hub
 }
 
+func (h *Hub) sendMsgToRoom(roomId string, message []byte) {
+	h.room <- wsMessageForRoom{
+		AppName: os.Getenv("app_name"),
+		RoomId:  roomId,
+		Message: message,
+	}
+}
+
+func (h *Hub) broadcastMsg(msg []byte) {
+	hub.broadcast <- msg
+}
+
 func (h *Hub) run() {
 	logger := logger.Get()
 	for {
@@ -119,8 +131,10 @@ func (h *Hub) run() {
 				delete(h.clients, client)
 				go client.clean()
 			}
+		// broadcast push message to redis channel
 		case message := <-h.broadcast:
 			infra.GetRedis().Publish(context.Background(), h.psbcchan, message)
+		// send message for client in this node then push to redis channel
 		case message := <-h.room:
 			b, _ := json.Marshal(message)
 			if err := infra.GetRedis().Publish(context.Background(), h.psroomchan, b).Err(); err != nil {
@@ -144,7 +158,6 @@ func (h *Hub) run() {
 				logger.Error(err)
 			}
 			if m.AppName != os.Getenv("app_name") {
-				logger.Info(string(m.Message))
 				for client := range h.clients {
 					ok := client.exist(m.RoomId)
 					if ok {

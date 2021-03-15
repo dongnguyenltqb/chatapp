@@ -1,13 +1,13 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
-	"golang.org/x/oauth2"
 )
 
 type googleUserInfoResponse struct {
@@ -51,12 +51,13 @@ func (app *App) Login(c *gin.Context) {
 }
 
 func (app *App) LoginCallback(c *gin.Context) {
-	tok, err := getConf().Exchange(oauth2.NoContext, c.Query("code"))
+	ctx := context.Background()
+	tok, err := getConf().Exchange(ctx, c.Query("code"))
 	if err != nil {
 		c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
-	client := getConf().Client(oauth2.NoContext, tok)
+	client := getConf().Client(ctx, tok)
 	email, err := client.Get("https://www.googleapis.com/oauth2/v3/userinfo")
 	if err != nil {
 		c.AbortWithError(http.StatusBadRequest, err)
