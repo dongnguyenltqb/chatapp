@@ -29,11 +29,6 @@ const (
 	maxRoomSize = 100
 )
 
-var (
-	newline = []byte{'\n'}
-	space   = []byte{' '}
-)
-
 // Client is a middleman between the websocket connection and the hub.
 type Client struct {
 	hub *Hub
@@ -71,13 +66,13 @@ func (c *Client) roomPump() {
 				// The hub closed the channel
 				return
 			}
-			if msg.Join == true {
+			if msg.Join {
 				for i := 0; i < len(msg.Ids); i++ {
 					id := msg.Ids[i]
 					c.join(id)
 				}
 			}
-			if msg.Leave == true {
+			if msg.Leave {
 				for i := 0; i < len(msg.Ids); i++ {
 					id := msg.Ids[i]
 					c.leave(id)
@@ -133,14 +128,7 @@ func (c *Client) writePump() {
 				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
-
-			w, err := c.conn.NextWriter(websocket.TextMessage)
-			if err != nil {
-				return
-			}
-			w.Write(message)
-
-			if err := w.Close(); err != nil {
+			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				return
 			}
 		case <-ticker.C:
@@ -154,13 +142,13 @@ func (c *Client) writePump() {
 
 func (c *Client) join(roomId string) {
 	n := len(c.rooms)
-	ok := false
+	joined := false
 	for i := 0; i < n; i++ {
 		if c.rooms[i] == roomId {
-			ok = true
+			joined = true
 		}
 	}
-	if ok == false {
+	if !joined {
 		c.rooms = append(c.rooms, roomId)
 	}
 }
@@ -218,7 +206,7 @@ func (c *Client) processRoomActionMsg(msg wsRoomActionMessage) {
 	// prepare message to send to each group
 	msg.MemberId = c.id
 	msgType := msgJoinRoom
-	if msg.Leave == true {
+	if msg.Leave {
 		msgType = msgLeaveRoom
 	}
 	// Loop and send mesage for each room
@@ -248,28 +236,27 @@ func (c *Client) processMsg(message []byte) {
 	}
 
 	// Handle room action
-	if msg.Type == msgJoinRoom {
+	if msg.Type == msgJoinRoom || msg.Type == msgLeaveRoom {
+		join := false
+		leave := false
+		if msg.Type == msgJoinRoom {
+			join = true
+		}
+		if msg.Type == msgLeaveRoom {
+			leave = true
+		}
 		r := wsRoomActionMessage{}
 		if err := json.Unmarshal(msg.Raw, &r); err != nil {
 			return
 		}
 		c.processRoomActionMsg(wsRoomActionMessage{
-			Join: true,
-			Ids:  r.Ids,
-		})
-	}
-	if msg.Type == msgLeaveRoom {
-		r := wsRoomActionMessage{}
-		if err := json.Unmarshal(msg.Raw, &r); err != nil {
-			return
-		}
-		c.processRoomActionMsg(wsRoomActionMessage{
-			Leave: true,
+			Join:  join,
+			Leave: leave,
 			Ids:   r.Ids,
 		})
 	}
 
-	// Handle chat message, broadcast to all connected client
+	// Handle chat message, broadcast room
 	if msg.Type == msgChat {
 		b, _ := json.Marshal(msg)
 		for _, roomId := range c.rooms {
@@ -297,16 +284,17 @@ func (c *Client) processMsg(message []byte) {
 		})
 		c.sendMsgToRoom(j.RoomId, b)
 	}
+
 	// Handle RTC message
 	if msg.Type == msgOffer {
-		o := wsOfferMessage{}
-		if err := json.Unmarshal(msg.Raw, &o); err != nil {
+		offer := wsOfferMessage{}
+		if err := json.Unmarshal(msg.Raw, &offer); err != nil {
 			logger.Error(err)
 			return
 		}
-		targetId := o.TargetID
-		o.TargetID = c.id
-		b, _ := json.Marshal(o)
+		targetId := offer.TargetID
+		offer.TargetID = c.id
+		b, _ := json.Marshal(offer)
 		m := wsMessage{
 			Type: "offer",
 			Raw:  b,
@@ -315,14 +303,14 @@ func (c *Client) processMsg(message []byte) {
 		c.sendMsgToRoom(targetId, b)
 	}
 	if msg.Type == msgAnswer {
-		o := wsAnswerMessage{}
-		if err := json.Unmarshal(msg.Raw, &o); err != nil {
+		answer := wsAnswerMessage{}
+		if err := json.Unmarshal(msg.Raw, &answer); err != nil {
 			logger.Error(err)
 			return
 		}
-		targetId := o.TargetID
-		o.TargetID = c.id
-		b, _ := json.Marshal(o)
+		targetId := answer.TargetID
+		answer.TargetID = c.id
+		b, _ := json.Marshal(answer)
 		m := wsMessage{
 			Type: "answer",
 			Raw:  b,
@@ -331,14 +319,14 @@ func (c *Client) processMsg(message []byte) {
 		c.sendMsgToRoom(targetId, b)
 	}
 	if msg.Type == msgIceCandidate {
-		o := wsIceCandidateMessage{}
-		if err := json.Unmarshal(msg.Raw, &o); err != nil {
+		candidate := wsIceCandidateMessage{}
+		if err := json.Unmarshal(msg.Raw, &candidate); err != nil {
 			logger.Error(err)
 			return
 		}
-		targetId := o.TargetID
-		o.TargetID = c.id
-		b, _ := json.Marshal(o)
+		targetId := candidate.TargetID
+		candidate.TargetID = c.id
+		b, _ := json.Marshal(candidate)
 		m := wsMessage{
 			Type: "icecandidate",
 			Raw:  b,

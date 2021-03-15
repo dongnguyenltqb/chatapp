@@ -49,6 +49,7 @@ func (h *Hub) serveWs(w http.ResponseWriter, r *http.Request) {
 	go client.writePump()
 	go client.readPump()
 	client.sendIdentityMsg()
+	client.broadcastMsg([]byte("xin chao : " + client.id))
 }
 
 // Copyright 2013 The Gorilla WebSocket Authors. All rights reserved.
@@ -89,8 +90,8 @@ func getHub() *Hub {
 		psroomchan := "chat_app_room_chan"
 		psbcchan := "chat_app_broadcast_chan"
 
-		subroom := infra.GetRedis().Subscribe(context.Background(), "chat_app_room_chan")
-		subbroadcast := infra.GetRedis().Subscribe(context.Background(), "chat_app_broadcast_chan")
+		subroom := infra.GetRedis().Subscribe(context.Background(), psroomchan)
+		subbroadcast := infra.GetRedis().Subscribe(context.Background(), psbcchan)
 
 		hub = &Hub{
 			broadcast:        make(chan []byte),
@@ -121,6 +122,7 @@ func (h *Hub) broadcastMsg(msg []byte) {
 }
 
 func (h *Hub) run() {
+	appName := os.Getenv("app_name")
 	logger := logger.Get()
 	for {
 		select {
@@ -131,9 +133,23 @@ func (h *Hub) run() {
 				delete(h.clients, client)
 				go client.clean()
 			}
-		// broadcast push message to redis channel
+		// broadcast and push message to redis channel
 		case message := <-h.broadcast:
-			infra.GetRedis().Publish(context.Background(), h.psbcchan, message)
+			msg := wsBroadcastMessage{
+				AppName: appName,
+				Message: message,
+			}
+			b, _ := json.Marshal(msg)
+			go infra.GetRedis().Publish(context.Background(), h.psbcchan, b)
+			for client := range h.clients {
+				select {
+				case client.send <- msg.Message:
+				default:
+					delete(h.clients, client)
+					go client.clean()
+				}
+			}
+
 		// send message for client in this node then push to redis channel
 		case message := <-h.room:
 			b, _ := json.Marshal(message)
@@ -157,7 +173,7 @@ func (h *Hub) run() {
 			if err := json.Unmarshal([]byte(message.Payload), &m); err != nil {
 				logger.Error(err)
 			}
-			if m.AppName != os.Getenv("app_name") {
+			if m.AppName != appName {
 				for client := range h.clients {
 					ok := client.exist(m.RoomId)
 					if ok {
@@ -171,12 +187,18 @@ func (h *Hub) run() {
 				}
 			}
 		case message := <-h.subbroadcastchan:
-			for client := range h.clients {
-				select {
-				case client.send <- []byte(message.Payload):
-				default:
-					delete(h.clients, client)
-					go client.clean()
+			msg := wsBroadcastMessage{}
+			if err := json.Unmarshal([]byte(message.Payload), &msg); err != nil {
+				logger.Error(err)
+			}
+			if msg.AppName != appName {
+				for client := range h.clients {
+					select {
+					case client.send <- msg.Message:
+					default:
+						delete(h.clients, client)
+						go client.clean()
+					}
 				}
 			}
 		}

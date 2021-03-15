@@ -25,6 +25,11 @@ type wsMessageForRoom struct {
 	Message []byte `json:"message"`
 }
 
+type wsBroadcastMessage struct {
+	AppName string `json:"appName"`
+	Message []byte `json:"message"`
+}
+
 type wsIdentityMessage struct {
 	ClientId string `json:"clientId"`
 }

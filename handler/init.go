@@ -69,10 +69,10 @@ func Run() {
 		hub.serveWs(c.Writer, c.Request)
 	})
 
-	server.GET("/login", app.Login)
-	server.GET("/login/callback", app.LoginCallback)
-	server.GET("/users/bySession/", app.GetBySession)
-	server.GET("/users/byId/:id", app.GetUserByID)
+	server.GET("/api/login", app.Login)
+	server.GET("/api/login/callback", app.LoginCallback)
+	server.GET("/api/users/bySession/", app.GetBySession)
+	server.GET("/api/users/byId/:id", app.GetUserByID)
 	if err := server.Run(); err != nil {
 		panic(err)
 	}
