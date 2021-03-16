@@ -33,12 +33,13 @@ func (h *Hub) serveWs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	client := &Client{
-		hub:   h,
-		conn:  conn,
-		id:    uuid.New().String(),
-		send:  make(chan []byte, 256),
-		rchan: make(chan wsRoomActionMessage, 100),
-		rooms: make([]string, maxRoomSize),
+		hub:    h,
+		conn:   conn,
+		id:     uuid.New().String(),
+		send:   make(chan []byte, 256),
+		rchan:  make(chan wsRoomActionMessage, 100),
+		rooms:  make([]string, maxRoomSize),
+		logger: logger.Get(),
 	}
 	client.rooms = []string{client.id}
 	client.hub.register <- client

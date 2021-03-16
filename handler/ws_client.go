@@ -5,11 +5,11 @@
 package handler
 
 import (
-	"chatapp/util/logger"
 	"encoding/json"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -47,6 +47,9 @@ type Client struct {
 
 	// Room
 	rooms []string
+
+	// Logger
+	logger *logrus.Logger
 }
 
 // clean delete everything of client after a hour
@@ -88,7 +91,6 @@ func (c *Client) roomPump() {
 // ensures that there is at most one reader on a connection by executing all
 // reads from this goroutine.
 func (c *Client) readPump() {
-	logger := logger.Get()
 	defer func() {
 		c.hub.unregister <- c
 		c.conn.Close()
@@ -100,7 +102,7 @@ func (c *Client) readPump() {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				logger.Error(err)
+				c.logger.Error(err)
 			}
 			break
 		}
@@ -199,20 +201,30 @@ func (c *Client) sendIdentityMsg() {
 	go c.sendMsg(b)
 }
 
-func (c *Client) processRoomActionMsg(msg wsRoomActionMessage) {
-	// process leave/join
-	c.rchan <- msg
+func (c *Client) processRoomActionMsg(message wsMessage) {
+	rMsg := wsRoomActionMessage{}
+	if err := json.Unmarshal(message.Raw, &rMsg); err != nil {
+		return
+	}
+	if message.Type == msgJoinRoom {
+		rMsg.Join = true
+	}
+	if message.Type == msgLeaveRoom {
+		rMsg.Leave = true
+	}
 
+	// process leave/join
+	c.rchan <- rMsg
 	// prepare message to send to each group
-	msg.MemberId = c.id
+	rMsg.MemberId = c.id
 	msgType := msgJoinRoom
-	if msg.Leave {
+	if rMsg.Leave {
 		msgType = msgLeaveRoom
 	}
 	// Loop and send mesage for each room
-	for _, roomId := range msg.Ids {
-		msg.Ids = []string{roomId}
-		b, _ := json.Marshal(msg)
+	for _, roomId := range rMsg.Ids {
+		rMsg.Ids = []string{roomId}
+		b, _ := json.Marshal(rMsg)
 		m := wsMessage{
 			Type: msgType,
 			Raw:  b,
@@ -226,112 +238,110 @@ func (c *Client) processRoomActionMsg(msg wsRoomActionMessage) {
 	}
 }
 
-// process message from readPump
-func (c *Client) processMsg(message []byte) {
-	logger := logger.Get()
-	msg := wsMessage{}
-	if err := json.Unmarshal(message, &msg); err != nil {
-		logger.Error(err)
+func (c *Client) processChatMsg(message []byte) {
+	for _, roomId := range c.rooms {
+		if roomId != c.id {
+			go c.sendMsgToRoom(roomId, message)
+		}
+	}
+}
+
+func (c *Client) processOfferMsg(msg wsMessage) {
+	offer := wsOfferMessage{}
+	if err := json.Unmarshal(msg.Raw, &offer); err != nil {
+		c.logger.Error(err)
 		return
 	}
+	targetId := offer.TargetID
+	offer.TargetID = c.id
+	b, _ := json.Marshal(offer)
+	m := wsMessage{
+		Type: "offer",
+		Raw:  b,
+	}
+	b, _ = json.Marshal(m)
+	c.sendMsgToRoom(targetId, b)
+}
 
+func (c *Client) processAnswerMsg(msg wsMessage) {
+	answer := wsAnswerMessage{}
+	if err := json.Unmarshal(msg.Raw, &answer); err != nil {
+		c.logger.Error(err)
+		return
+	}
+	targetId := answer.TargetID
+	answer.TargetID = c.id
+	b, _ := json.Marshal(answer)
+	m := wsMessage{
+		Type: "answer",
+		Raw:  b,
+	}
+	b, _ = json.Marshal(m)
+	c.sendMsgToRoom(targetId, b)
+}
+
+func (c *Client) processIceCandidateMsg(msg wsMessage) {
+	candidate := wsIceCandidateMessage{}
+	if err := json.Unmarshal(msg.Raw, &candidate); err != nil {
+		c.logger.Error(err)
+		return
+	}
+	targetId := candidate.TargetID
+	candidate.TargetID = c.id
+	b, _ := json.Marshal(candidate)
+	m := wsMessage{
+		Type: "icecandidate",
+		Raw:  b,
+	}
+	b, _ = json.Marshal(m)
+	c.sendMsgToRoom(targetId, b)
+}
+
+func (c *Client) processJoinVideoCallMsg(msg wsMessage) {
+	j := wsJoinRoomVideoCallMessage{}
+	if err := json.Unmarshal(msg.Raw, &j); err != nil {
+		c.logger.Error(err)
+		return
+	}
+	j.MemberId = c.id
+	b, _ := json.Marshal(wsJoinRoomVideoCallMessage{
+		RoomId:   j.RoomId,
+		MemberId: c.id,
+	})
+	b, _ = json.Marshal(wsMessage{
+		Type: msgJoinRoomVideoCall,
+		Raw:  b,
+	})
+	c.sendMsgToRoom(j.RoomId, b)
+}
+
+// process message from readPump
+func (c *Client) processMsg(message []byte) {
+	msg := wsMessage{}
+	if err := json.Unmarshal(message, &msg); err != nil {
+		c.logger.Error(err)
+		return
+	}
 	// Handle room action
 	if msg.Type == msgJoinRoom || msg.Type == msgLeaveRoom {
-		join := false
-		leave := false
-		if msg.Type == msgJoinRoom {
-			join = true
-		}
-		if msg.Type == msgLeaveRoom {
-			leave = true
-		}
-		r := wsRoomActionMessage{}
-		if err := json.Unmarshal(msg.Raw, &r); err != nil {
-			return
-		}
-		c.processRoomActionMsg(wsRoomActionMessage{
-			Join:  join,
-			Leave: leave,
-			Ids:   r.Ids,
-		})
+		c.processRoomActionMsg(msg)
 	}
-
 	// Handle chat message, broadcast room
 	if msg.Type == msgChat {
-		b, _ := json.Marshal(msg)
-		for _, roomId := range c.rooms {
-			if roomId != c.id {
-				go c.sendMsgToRoom(roomId, b)
-			}
-		}
+		c.processChatMsg(message)
 	}
-
 	// Handle join room video call
 	if msg.Type == msgJoinRoomVideoCall {
-		j := wsJoinRoomVideoCallMessage{}
-		if err := json.Unmarshal(msg.Raw, &j); err != nil {
-			logger.Error(err)
-			return
-		}
-		j.MemberId = c.id
-		b, _ := json.Marshal(wsJoinRoomVideoCallMessage{
-			RoomId:   j.RoomId,
-			MemberId: c.id,
-		})
-		b, _ = json.Marshal(wsMessage{
-			Type: msgJoinRoomVideoCall,
-			Raw:  b,
-		})
-		c.sendMsgToRoom(j.RoomId, b)
+		c.processJoinVideoCallMsg(msg)
 	}
-
 	// Handle RTC message
 	if msg.Type == msgOffer {
-		offer := wsOfferMessage{}
-		if err := json.Unmarshal(msg.Raw, &offer); err != nil {
-			logger.Error(err)
-			return
-		}
-		targetId := offer.TargetID
-		offer.TargetID = c.id
-		b, _ := json.Marshal(offer)
-		m := wsMessage{
-			Type: "offer",
-			Raw:  b,
-		}
-		b, _ = json.Marshal(m)
-		c.sendMsgToRoom(targetId, b)
+		c.processOfferMsg(msg)
 	}
 	if msg.Type == msgAnswer {
-		answer := wsAnswerMessage{}
-		if err := json.Unmarshal(msg.Raw, &answer); err != nil {
-			logger.Error(err)
-			return
-		}
-		targetId := answer.TargetID
-		answer.TargetID = c.id
-		b, _ := json.Marshal(answer)
-		m := wsMessage{
-			Type: "answer",
-			Raw:  b,
-		}
-		b, _ = json.Marshal(m)
-		c.sendMsgToRoom(targetId, b)
+		c.processAnswerMsg(msg)
 	}
 	if msg.Type == msgIceCandidate {
-		candidate := wsIceCandidateMessage{}
-		if err := json.Unmarshal(msg.Raw, &candidate); err != nil {
-			logger.Error(err)
-			return
-		}
-		targetId := candidate.TargetID
-		candidate.TargetID = c.id
-		b, _ := json.Marshal(candidate)
-		m := wsMessage{
-			Type: "icecandidate",
-			Raw:  b,
-		}
-		b, _ = json.Marshal(m)
-		c.sendMsgToRoom(targetId, b)
+		c.processIceCandidateMsg(msg)
 	}
 }
