@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -126,16 +125,15 @@ window.onload = function () {
             alert("Connection closed",evt)
         };
         conn.onmessage = async function ({data}) {
-            var message = JSON.parse(data)
+            var message = JSON.parse(data);
             if(message.type =="chat"){
                 var item = document.createElement("div");
                 item.innerText =  message.raw.text
                 document.getElementById("chat").appendChild(item)
             }
             if(message.type ==="identity"){
-                var item =  document.getElementById("identity")
-                item.innerText = "Your User Id = "+ message.raw.clientId
                 socketId =  message.raw.clientId          
+                console.log("SocketId= ",socketId)
             }
             if(message.type ==="joinRoom"){
                     let {memberId,ids} = message.raw
@@ -173,7 +171,6 @@ window.onload = function () {
                             regIceEvent(targetId)
                             updateStream(targetId)
                     }
-    
                     peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
                     const answer = await peerConnection.createAnswer();
                     await peerConnection.setLocalDescription(answer);
@@ -211,8 +208,6 @@ window.onload = function () {
 </head>
 <body>
     <button onclick="myFunction(this)">#random</button>
-    <button onclick="myFunction(this)">#gaming</button>
-    <button onclick="myFunction(this)">#general</button>
 <script>
 function myFunction(e) {
         let val = e.textContent
@@ -223,7 +218,7 @@ function myFunction(e) {
                         ids:["#random","#gaming","#general"]
                     }
             }))
-        document.getElementById('tenroomdangjoin').innerHTML = "may dang join room  => "+val;
+        document.getElementById('tenroomdangjoin').innerHTML = "Current room: "+val;
         roomName = val
         // for(let i=1;i<=1000;i++)
         setTimeout(()=>{
@@ -237,8 +232,6 @@ function myFunction(e) {
 
 
             },1000)
-
-
 }
 </script>
 

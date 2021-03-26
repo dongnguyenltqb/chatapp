@@ -19,6 +19,10 @@ type wsMessage struct {
 	Raw  json.RawMessage `json:"raw"`
 }
 
+type wsWelcomeMessage struct {
+	ClientId string `json:"clientId"`
+}
+
 type wsMessageForRoom struct {
 	AppName string `json:"appName"`
 	RoomId  string `json:"roomId"`

@@ -16,6 +16,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/sirupsen/logrus"
 )
 
 var upgrader = websocket.Upgrader{
@@ -50,7 +51,8 @@ func (h *Hub) serveWs(w http.ResponseWriter, r *http.Request) {
 	go client.writePump()
 	go client.readPump()
 	client.sendIdentityMsg()
-	client.broadcastMsg([]byte("xin chao : " + client.id))
+	client.welcome()
+
 }
 
 // Copyright 2013 The Gorilla WebSocket Authors. All rights reserved.
@@ -76,10 +78,13 @@ type Hub struct {
 	unregister chan *Client
 
 	// Pubsub channel
-	psbcchan         string
-	psroomchan       string
-	subroomchan      <-chan *redis.Message
-	subbroadcastchan <-chan *redis.Message
+	pubSubRoomChannel      string
+	pubSubBroadcastChannel string
+	subscribeRoomChan      <-chan *redis.Message
+	subscribeBroadcastChan <-chan *redis.Message
+
+	// Logger
+	logger *logrus.Logger
 }
 
 var hub *Hub
@@ -88,22 +93,23 @@ var onceInitHub sync.Once
 // getHub return singleton hub
 func getHub() *Hub {
 	onceInitHub.Do(func() {
-		psroomchan := "chat_app_room_chan"
-		psbcchan := "chat_app_broadcast_chan"
+		pubSubRoomChannel := "chat_app_room_chan"
+		pubSubBroadcastChannel := "chat_app_broadcast_chan"
 
-		subroom := infra.GetRedis().Subscribe(context.Background(), psroomchan)
-		subbroadcast := infra.GetRedis().Subscribe(context.Background(), psbcchan)
+		redisSubscribeRoom := infra.GetRedis().Subscribe(context.Background(), pubSubRoomChannel)
+		redisSubscribeBroadcast := infra.GetRedis().Subscribe(context.Background(), pubSubBroadcastChannel)
 
 		hub = &Hub{
-			broadcast:        make(chan []byte),
-			room:             make(chan wsMessageForRoom),
-			register:         make(chan *Client),
-			unregister:       make(chan *Client),
-			clients:          make(map[*Client]bool),
-			psbcchan:         psbcchan,
-			psroomchan:       psroomchan,
-			subroomchan:      subroom.Channel(),
-			subbroadcastchan: subbroadcast.Channel(),
+			broadcast:              make(chan []byte),
+			room:                   make(chan wsMessageForRoom),
+			register:               make(chan *Client),
+			unregister:             make(chan *Client),
+			clients:                make(map[*Client]bool),
+			pubSubRoomChannel:      pubSubRoomChannel,
+			pubSubBroadcastChannel: pubSubBroadcastChannel,
+			subscribeRoomChan:      redisSubscribeRoom.Channel(),
+			subscribeBroadcastChan: redisSubscribeBroadcast.Channel(),
+			logger:                 logger.Get(),
 		}
 		go hub.run()
 	})
@@ -124,7 +130,6 @@ func (h *Hub) broadcastMsg(msg []byte) {
 
 func (h *Hub) run() {
 	appName := os.Getenv("app_name")
-	logger := logger.Get()
 	for {
 		select {
 		case client := <-h.register:
@@ -141,7 +146,7 @@ func (h *Hub) run() {
 				Message: message,
 			}
 			b, _ := json.Marshal(msg)
-			go infra.GetRedis().Publish(context.Background(), h.psbcchan, b)
+			go infra.GetRedis().Publish(context.Background(), h.pubSubBroadcastChannel, b)
 			for client := range h.clients {
 				select {
 				case client.send <- msg.Message:
@@ -154,8 +159,8 @@ func (h *Hub) run() {
 		// send message for client in this node then push to redis channel
 		case message := <-h.room:
 			b, _ := json.Marshal(message)
-			if err := infra.GetRedis().Publish(context.Background(), h.psroomchan, b).Err(); err != nil {
-				logger.Error(err)
+			if err := infra.GetRedis().Publish(context.Background(), h.pubSubRoomChannel, b).Err(); err != nil {
+				h.logger.Error(err)
 			}
 			for client := range h.clients {
 				ok := client.exist(message.RoomId)
@@ -169,10 +174,10 @@ func (h *Hub) run() {
 				}
 			}
 		// Two pubsub channel for receiving message from other node
-		case message := <-h.subroomchan:
+		case message := <-h.subscribeRoomChan:
 			m := wsMessageForRoom{}
 			if err := json.Unmarshal([]byte(message.Payload), &m); err != nil {
-				logger.Error(err)
+				h.logger.Error(err)
 			}
 			if m.AppName != appName {
 				for client := range h.clients {
@@ -187,10 +192,10 @@ func (h *Hub) run() {
 					}
 				}
 			}
-		case message := <-h.subbroadcastchan:
+		case message := <-h.subscribeBroadcastChan:
 			msg := wsBroadcastMessage{}
 			if err := json.Unmarshal([]byte(message.Payload), &msg); err != nil {
-				logger.Error(err)
+				h.logger.Error(err)
 			}
 			if msg.AppName != appName {
 				for client := range h.clients {

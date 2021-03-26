@@ -142,6 +142,19 @@ func (c *Client) writePump() {
 	}
 }
 
+func (c *Client) welcome() {
+	welMsg := wsWelcomeMessage{
+		ClientId: c.id,
+	}
+	b, _ := json.Marshal(welMsg)
+	msg := wsMessage{
+		Type: "welcome",
+		Raw:  b,
+	}
+	b, _ = json.Marshal(msg)
+	c.broadcastMsg(b)
+}
+
 func (c *Client) join(roomId string) {
 	n := len(c.rooms)
 	joined := false

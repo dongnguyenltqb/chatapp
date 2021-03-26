@@ -17,6 +17,7 @@ import (
 type App struct {
 	Logger *logrus.Logger
 	User   entity.User
+	Image  entity.Image
 }
 
 type HandlerResp struct {
@@ -49,6 +50,7 @@ func Run() {
 	app := &App{
 		Logger: logger.Get(),
 		User:   entity.User{},
+		Image:  entity.Image{},
 	}
 	// Init ws handler
 	hub := getHub()
@@ -73,6 +75,8 @@ func Run() {
 	server.GET("/api/login/callback", app.LoginCallback)
 	server.GET("/api/users/bySession/", app.GetBySession)
 	server.GET("/api/users/byId/:id", app.GetUserByID)
+
+	server.POST("/api/image/presigned", app.GetPreSignedUploadUrl)
 	if err := server.Run(); err != nil {
 		panic(err)
 	}

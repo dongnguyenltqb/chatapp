@@ -3,6 +3,7 @@ module chatapp
 go 1.16
 
 require (
+	github.com/aws/aws-sdk-go v1.37.31 // indirect
 	github.com/gin-contrib/sessions v0.0.3 // indirect
 	github.com/gin-gonic/gin v1.6.3
 	github.com/go-redis/redis/v8 v8.7.1 // indirect
