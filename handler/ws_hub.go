@@ -62,6 +62,8 @@ func (h *Hub) serveWs(w http.ResponseWriter, r *http.Request) {
 // Hub maintains the set of active clients and broadcasts messages to the
 // clients.
 type Hub struct {
+	// Node Id
+	nodeId string
 	// Registered clients.
 	clients map[*Client]bool
 
@@ -100,6 +102,7 @@ func getHub() *Hub {
 		redisSubscribeBroadcast := infra.GetRedis().Subscribe(context.Background(), pubSubBroadcastChannel)
 
 		hub = &Hub{
+			nodeId:                 os.Getenv("node_id"),
 			broadcast:              make(chan []byte),
 			room:                   make(chan wsMessageForRoom),
 			register:               make(chan *Client),
@@ -118,7 +121,7 @@ func getHub() *Hub {
 
 func (h *Hub) sendMsgToRoom(roomId string, message []byte) {
 	h.room <- wsMessageForRoom{
-		NodeId:  os.Getenv("node_id"),
+		NodeId:  h.nodeId,
 		RoomId:  roomId,
 		Message: message,
 	}
@@ -128,8 +131,68 @@ func (h *Hub) broadcastMsg(msg []byte) {
 	hub.broadcast <- msg
 }
 
+func (h *Hub) doBroadcastMsg(message []byte) {
+	for client := range h.clients {
+		select {
+		case client.send <- message:
+		default:
+			delete(h.clients, client)
+			go client.clean()
+		}
+	}
+}
+
+func (h *Hub) doBroadcastRoomMsg(message wsMessageForRoom) {
+	for client := range h.clients {
+		ok := client.exist(message.RoomId)
+		if ok {
+			select {
+			case client.send <- message.Message:
+			default:
+				delete(h.clients, client)
+				go client.clean()
+			}
+		}
+	}
+}
+
+func (h *Hub) pushRoomMsgToRedis(message wsMessageForRoom) {
+	b, _ := json.Marshal(message)
+	if err := infra.GetRedis().Publish(context.Background(), h.pubSubRoomChannel, b).Err(); err != nil {
+		h.logger.Error(err)
+	}
+}
+
+func (h *Hub) pushBroadcastMsgToRedis(message []byte) {
+	msg := wsBroadcastMessage{
+		NodeId:  h.nodeId,
+		Message: message,
+	}
+	b, _ := json.Marshal(msg)
+	infra.GetRedis().Publish(context.Background(), h.pubSubBroadcastChannel, b)
+}
+
+func (h *Hub) processRedisRoomMsg(message *redis.Message) {
+	m := wsMessageForRoom{}
+	if err := json.Unmarshal([]byte(message.Payload), &m); err != nil {
+		h.logger.Error(err)
+	}
+	if m.NodeId != h.nodeId {
+		h.doBroadcastRoomMsg(m)
+	}
+}
+
+func (h *Hub) processRedisBroadcastMsg(message *redis.Message) {
+	msg := wsBroadcastMessage{}
+	if err := json.Unmarshal([]byte(message.Payload), &msg); err != nil {
+		h.logger.Error(err)
+	}
+	if msg.NodeId != h.nodeId {
+		h.doBroadcastMsg(msg.Message)
+	}
+}
+
 func (h *Hub) run() {
-	nodeId := os.Getenv("node_id")
 	for {
 		select {
 		case client := <-h.register:
@@ -141,72 +204,17 @@ func (h *Hub) run() {
 			}
 		// broadcast and push message to redis channel
 		case message := <-h.broadcast:
-			msg := wsBroadcastMessage{
-				NodeId:  nodeId,
-				Message: message,
-			}
-			b, _ := json.Marshal(msg)
-			go infra.GetRedis().Publish(context.Background(), h.pubSubBroadcastChannel, b)
-			for client := range h.clients {
-				select {
-				case client.send <- msg.Message:
-				default:
-					delete(h.clients, client)
-					go client.clean()
-				}
-			}
-
+			go h.pushBroadcastMsgToRedis(message)
+			h.doBroadcastMsg(message)
 		// send message for client in this node then push to redis channel
 		case message := <-h.room:
-			b, _ := json.Marshal(message)
-			if err := infra.GetRedis().Publish(context.Background(), h.pubSubRoomChannel, b).Err(); err != nil {
-				h.logger.Error(err)
-			}
-			for client := range h.clients {
-				ok := client.exist(message.RoomId)
-				if ok {
-					select {
-					case client.send <- message.Message:
-					default:
-						delete(h.clients, client)
-						go client.clean()
-					}
-				}
-			}
+			go h.pushRoomMsgToRedis(message)
+			h.doBroadcastRoomMsg(message)
 		// Two pubsub channel for receiving message from other node
 		case message := <-h.subscribeRoomChan:
-			m := wsMessageForRoom{}
-			if err := json.Unmarshal([]byte(message.Payload), &m); err != nil {
-				h.logger.Error(err)
-			}
-			if m.NodeId != nodeId {
-				for client := range h.clients {
-					ok := client.exist(m.RoomId)
-					if ok {
-						select {
-						case client.send <- m.Message:
-						default:
-							delete(h.clients, client)
-							go client.clean()
-						}
-					}
-				}
-			}
+			h.processRedisRoomMsg(message)
 		case message := <-h.subscribeBroadcastChan:
-			msg := wsBroadcastMessage{}
-			if err := json.Unmarshal([]byte(message.Payload), &msg); err != nil {
-				h.logger.Error(err)
-			}
-			if msg.NodeId != nodeId {
-				for client := range h.clients {
-					select {
-					case client.send <- msg.Message:
-					default:
-						delete(h.clients, client)
-						go client.clean()
-					}
-				}
-			}
+			h.processRedisBroadcastMsg(message)
 		}
 	}
 }
