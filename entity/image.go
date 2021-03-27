@@ -22,7 +22,8 @@ func (i *Image) GetPreSignedUploadUrl() (string, error) {
 	r, _ := infra.GetS3().PutObjectRequest(&s3.PutObjectInput{
 		Bucket:      aws.String(ImageBucketName),
 		Key:         aws.String(i.S3ObjectKey),
-		ContentType: aws.String("image/png"),
+		ContentType: aws.String("image/" + i.FileType),
+		ACL:         aws.String("public-read"),
 	})
 	url, err := r.Presign(150 * time.Minute)
 	return url, err

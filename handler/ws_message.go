@@ -24,13 +24,13 @@ type wsWelcomeMessage struct {
 }
 
 type wsMessageForRoom struct {
-	AppName string `json:"appName"`
+	NodeId  string `json:"nodeId"`
 	RoomId  string `json:"roomId"`
 	Message []byte `json:"message"`
 }
 
 type wsBroadcastMessage struct {
-	AppName string `json:"appName"`
+	NodeId  string `json:"nodeId"`
 	Message []byte `json:"message"`
 }
 

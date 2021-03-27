@@ -105,8 +105,8 @@ func getHub() *Hub {
 			register:               make(chan *Client),
 			unregister:             make(chan *Client),
 			clients:                make(map[*Client]bool),
-			pubSubRoomChannel:      pubSubRoomChannel,
-			pubSubBroadcastChannel: pubSubBroadcastChannel,
+			pubSubRoomChannel:      "chat_app_room_chan",
+			pubSubBroadcastChannel: "chat_app_broadcast_chan",
 			subscribeRoomChan:      redisSubscribeRoom.Channel(),
 			subscribeBroadcastChan: redisSubscribeBroadcast.Channel(),
 			logger:                 logger.Get(),
@@ -118,7 +118,7 @@ func getHub() *Hub {
 
 func (h *Hub) sendMsgToRoom(roomId string, message []byte) {
 	h.room <- wsMessageForRoom{
-		AppName: os.Getenv("app_name"),
+		NodeId:  os.Getenv("node_id"),
 		RoomId:  roomId,
 		Message: message,
 	}
@@ -129,7 +129,7 @@ func (h *Hub) broadcastMsg(msg []byte) {
 }
 
 func (h *Hub) run() {
-	appName := os.Getenv("app_name")
+	nodeId := os.Getenv("node_id")
 	for {
 		select {
 		case client := <-h.register:
@@ -142,7 +142,7 @@ func (h *Hub) run() {
 		// broadcast and push message to redis channel
 		case message := <-h.broadcast:
 			msg := wsBroadcastMessage{
-				AppName: appName,
+				NodeId:  nodeId,
 				Message: message,
 			}
 			b, _ := json.Marshal(msg)
@@ -179,7 +179,7 @@ func (h *Hub) run() {
 			if err := json.Unmarshal([]byte(message.Payload), &m); err != nil {
 				h.logger.Error(err)
 			}
-			if m.AppName != appName {
+			if m.NodeId != nodeId {
 				for client := range h.clients {
 					ok := client.exist(m.RoomId)
 					if ok {
@@ -197,7 +197,7 @@ func (h *Hub) run() {
 			if err := json.Unmarshal([]byte(message.Payload), &msg); err != nil {
 				h.logger.Error(err)
 			}
-			if msg.AppName != appName {
+			if msg.NodeId != nodeId {
 				for client := range h.clients {
 					select {
 					case client.send <- msg.Message:

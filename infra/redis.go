@@ -4,6 +4,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/go-redis/redis/v8"
 )
@@ -15,9 +16,10 @@ func GetRedis() *redis.Client {
 	onceSetupRedis.Do(func() {
 		db, _ := strconv.Atoi(os.Getenv("redis_db"))
 		rdb = redis.NewClient(&redis.Options{
-			Addr:     os.Getenv("redis_addr"),
-			Password: os.Getenv("redis_password"),
-			DB:       db,
+			Addr:        os.Getenv("redis_addr"),
+			Password:    os.Getenv("redis_password"),
+			DB:          db,
+			DialTimeout: 3 * time.Second,
 		})
 	})
 	return rdb

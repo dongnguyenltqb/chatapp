@@ -335,13 +335,13 @@ func (c *Client) processMsg(message []byte) {
 		c.logger.Error(err)
 		return
 	}
-	// Handle room action
-	if msg.Type == msgJoinRoom || msg.Type == msgLeaveRoom {
-		c.processRoomActionMsg(msg)
-	}
 	// Handle chat message, broadcast room
 	if msg.Type == msgChat {
 		c.processChatMsg(message)
+	}
+	// Handle room action
+	if msg.Type == msgJoinRoom || msg.Type == msgLeaveRoom {
+		c.processRoomActionMsg(msg)
 	}
 	// Handle join room video call
 	if msg.Type == msgJoinRoomVideoCall {

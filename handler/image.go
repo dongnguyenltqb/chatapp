@@ -2,35 +2,38 @@ package handler
 
 import (
 	"chatapp/entity"
-	"errors"
+	reqschema "chatapp/handler/validation/schema"
+	reqvalidator "chatapp/handler/validation/validator"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
-func (app *App) validateGetPreSignedUploadUrl(i entity.Image) bool {
-	if i.FileType == "" {
-		return false
-	}
-	return true
-}
 func (app *App) GetPreSignedUploadUrl(c *gin.Context) {
-	i := entity.Image{}
-	if err := c.BindJSON(&i); err != nil {
+	// bind request payload
+	reqPayload := reqschema.GetPreSignedUploadUrlRequestSchema{}
+	if err := c.BindJSON(&reqPayload); err != nil {
 		app.Logger.Error(err)
-		c.AbortWithError(400, err)
+		c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
-	if app.validateGetPreSignedUploadUrl(i) == false {
-		c.AbortWithError(400, errors.New("bad payload"))
+	// validate request payload
+	if err := reqvalidator.StructValidate(reqschema.GetPreSignedUploadUrlRequestSchemaLoader, reqPayload); err != nil {
+		app.Logger.Error(err)
+		c.AbortWithError(http.StatusBadRequest, err)
 		return
 	}
-	i.FileName = uuid.NewString()
+	i := entity.Image{
+		FileType: *reqPayload.FileType,
+		FileName: uuid.NewString(),
+	}
 	i.S3ObjectKey = i.FileName + "." + i.FileType
 	url, err := i.GetPreSignedUploadUrl()
 	if err != nil {
-		c.String(400, err.Error())
+		app.Logger.Error(err)
+		c.String(http.StatusInternalServerError, err.Error())
 		return
 	}
-	c.String(200, url)
+	c.String(http.StatusOK, url)
 }
