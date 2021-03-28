@@ -121,6 +121,10 @@ window.onload = function () {
     if (window["WebSocket"]) {
         let addr = (document.location.href.indexOf("https://")>=0 ? "wss://" : "ws://" )+ document.location.host + "/ws";
         conn = new WebSocket(addr)
+        var a =[]
+        // for(let i=1;i<=400;i++){
+        //     a[i] =  new WebSocket(addr)
+        // }
         conn.onclose = function (evt) {
             alert("Connection closed",evt)
         };

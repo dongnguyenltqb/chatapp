@@ -1,7 +1,3 @@
-// Copyright 2013 The Gorilla WebSocket Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 package handler
 
 import (
@@ -52,34 +48,26 @@ type Client struct {
 	logger *logrus.Logger
 }
 
-// clean delete everything of client after a hour
+// remove every message and shutdown after 1 minutes
 func (c *Client) clean() {
-	<-time.After(time.Minute)
+	c.rooms = nil
 	close(c.send)
 	close(c.rchan)
-	c.rooms = nil
 }
 
 // roomPump pumps action for channel and process one by one
 func (c *Client) roomPump() {
-	for {
-		select {
-		case msg, ok := <-c.rchan:
-			if !ok {
-				// The hub closed the channel
-				return
+	for msg := range c.rchan {
+		if msg.Join {
+			for i := 0; i < len(msg.Ids); i++ {
+				id := msg.Ids[i]
+				c.join(id)
 			}
-			if msg.Join {
-				for i := 0; i < len(msg.Ids); i++ {
-					id := msg.Ids[i]
-					c.join(id)
-				}
-			}
-			if msg.Leave {
-				for i := 0; i < len(msg.Ids); i++ {
-					id := msg.Ids[i]
-					c.leave(id)
-				}
+		}
+		if msg.Leave {
+			for i := 0; i < len(msg.Ids); i++ {
+				id := msg.Ids[i]
+				c.leave(id)
 			}
 		}
 	}
@@ -189,8 +177,11 @@ func (c *Client) exist(roomId string) bool {
 	return false
 }
 
-func (c *Client) sendMsg(msg []byte) {
-	c.send <- msg
+func (c *Client) sendMsg(message []byte) {
+	c.hub.clientMsg <- wsMessageForSpecificClient{
+		c:       c,
+		message: message,
+	}
 }
 
 func (c *Client) sendMsgToRoom(roomId string, message []byte) {
@@ -246,7 +237,7 @@ func (c *Client) processRoomActionMsg(message wsMessage) {
 		c.sendMsgToRoom(roomId, r)
 		// if message type is leave, emit to this guy
 		if msgType == msgLeaveRoom {
-			c.sendMsgToRoom(c.id, r)
+			c.sendMsg(r)
 		}
 	}
 }

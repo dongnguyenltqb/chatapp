@@ -67,6 +67,9 @@ type Hub struct {
 	// Registered clients.
 	clients map[*Client]bool
 
+	// Outbound message for specific client
+	clientMsg chan wsMessageForSpecificClient
+
 	// Outbound messages
 	broadcast chan []byte
 
@@ -103,6 +106,7 @@ func getHub() *Hub {
 
 		hub = &Hub{
 			nodeId:                 os.Getenv("node_id"),
+			clientMsg:              make(chan wsMessageForSpecificClient),
 			broadcast:              make(chan []byte),
 			room:                   make(chan wsMessageForRoom),
 			register:               make(chan *Client),
@@ -129,6 +133,17 @@ func (h *Hub) sendMsgToRoom(roomId string, message []byte) {
 
 func (h *Hub) broadcastMsg(msg []byte) {
 	hub.broadcast <- msg
+}
+
+func (h *Hub) doSendMsg(message wsMessageForSpecificClient) {
+	if ok := h.clients[message.c]; ok {
+		select {
+		case message.c.send <- message.message:
+		default:
+			delete(h.clients, message.c)
+			go message.c.clean()
+		}
+	}
 }
 
 func (h *Hub) doBroadcastMsg(message []byte) {
@@ -195,6 +210,7 @@ func (h *Hub) processRedisBroadcastMsg(message *redis.Message) {
 func (h *Hub) run() {
 	for {
 		select {
+		// register and deregister client
 		case client := <-h.register:
 			h.clients[client] = true
 		case client := <-h.unregister:
@@ -202,11 +218,14 @@ func (h *Hub) run() {
 				delete(h.clients, client)
 				go client.clean()
 			}
+		// send message to specific client
+		case message := <-h.clientMsg:
+			h.doSendMsg(message)
 		// broadcast and push message to redis channel
 		case message := <-h.broadcast:
 			go h.pushBroadcastMsgToRedis(message)
 			h.doBroadcastMsg(message)
-		// send message for client in this node then push to redis channel
+		// broadast message for client in this node then push to redis channel
 		case message := <-h.room:
 			go h.pushRoomMsgToRedis(message)
 			h.doBroadcastRoomMsg(message)

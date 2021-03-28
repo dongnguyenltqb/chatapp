@@ -23,6 +23,11 @@ type wsWelcomeMessage struct {
 	ClientId string `json:"clientId"`
 }
 
+type wsMessageForSpecificClient struct {
+	c       *Client
+	message []byte
+}
+
 type wsMessageForRoom struct {
 	NodeId  string `json:"nodeId"`
 	RoomId  string `json:"roomId"`
