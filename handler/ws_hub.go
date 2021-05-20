@@ -68,7 +68,7 @@ type Hub struct {
 	clients map[*Client]bool
 
 	// Outbound message for specific client
-	clientMsg chan wsMessageForSpecificClient
+	directMsg chan wsDirectMessage
 
 	// Outbound messages
 	broadcast chan []byte
@@ -98,25 +98,25 @@ var onceInitHub sync.Once
 // getHub return singleton hub
 func getHub() *Hub {
 	onceInitHub.Do(func() {
-		pubSubRoomChannel := "chat_app_room_chan"
-		pubSubBroadcastChannel := "chat_app_broadcast_chan"
+		// pubSubRoomChannel := "chat_app_room_chan"
+		// pubSubBroadcastChannel := "chat_app_broadcast_chan"
 
-		redisSubscribeRoom := infra.GetRedis().Subscribe(context.Background(), pubSubRoomChannel)
-		redisSubscribeBroadcast := infra.GetRedis().Subscribe(context.Background(), pubSubBroadcastChannel)
+		// redisSubscribeRoom := infra.GetRedis().Subscribe(context.Background(), pubSubRoomChannel)
+		// redisSubscribeBroadcast := infra.GetRedis().Subscribe(context.Background(), pubSubBroadcastChannel)
 
 		hub = &Hub{
-			nodeId:                 os.Getenv("node_id"),
-			clientMsg:              make(chan wsMessageForSpecificClient),
-			broadcast:              make(chan []byte),
-			room:                   make(chan wsMessageForRoom),
-			register:               make(chan *Client),
-			unregister:             make(chan *Client),
-			clients:                make(map[*Client]bool),
-			pubSubRoomChannel:      "chat_app_room_chan",
-			pubSubBroadcastChannel: "chat_app_broadcast_chan",
-			subscribeRoomChan:      redisSubscribeRoom.Channel(),
-			subscribeBroadcastChan: redisSubscribeBroadcast.Channel(),
-			logger:                 logger.Get(),
+			nodeId:     os.Getenv("node_id"),
+			directMsg:  make(chan wsDirectMessage),
+			broadcast:  make(chan []byte),
+			room:       make(chan wsMessageForRoom),
+			register:   make(chan *Client),
+			unregister: make(chan *Client),
+			clients:    make(map[*Client]bool),
+			// pubSubRoomChannel:      "chat_app_room_chan",
+			// pubSubBroadcastChannel: "chat_app_broadcast_chan",
+			// subscribeRoomChan:      redisSubscribeRoom.Channel(),
+			// subscribeBroadcastChan: redisSubscribeBroadcast.Channel(),
+			logger: logger.Get(),
 		}
 		go hub.run()
 	})
@@ -135,7 +135,7 @@ func (h *Hub) broadcastMsg(msg []byte) {
 	hub.broadcast <- msg
 }
 
-func (h *Hub) doSendMsg(message wsMessageForSpecificClient) {
+func (h *Hub) doSendMsg(message wsDirectMessage) {
 	if ok := h.clients[message.c]; ok {
 		select {
 		case message.c.send <- message.message:
@@ -219,21 +219,21 @@ func (h *Hub) run() {
 				go client.clean()
 			}
 		// send message to specific client
-		case message := <-h.clientMsg:
+		case message := <-h.directMsg:
 			h.doSendMsg(message)
 		// broadcast and push message to redis channel
 		case message := <-h.broadcast:
-			go h.pushBroadcastMsgToRedis(message)
+			// go h.pushBroadcastMsgToRedis(message)
 			h.doBroadcastMsg(message)
 		// broadast message for client in this node then push to redis channel
 		case message := <-h.room:
-			go h.pushRoomMsgToRedis(message)
+			// go h.pushRoomMsgToRedis(message)
 			h.doBroadcastRoomMsg(message)
-		// Two pubsub channel for receiving message from other node
-		case message := <-h.subscribeRoomChan:
-			h.processRedisRoomMsg(message)
-		case message := <-h.subscribeBroadcastChan:
-			h.processRedisBroadcastMsg(message)
+			// Two pubsub channel for receiving message from other node
+			// case message := <-h.subscribeRoomChan:
+			// 	h.processRedisRoomMsg(message)
+			// case message := <-h.subscribeBroadcastChan:
+			// 	h.processRedisBroadcastMsg(message)
 		}
 	}
 }

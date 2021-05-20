@@ -178,7 +178,7 @@ func (c *Client) exist(roomId string) bool {
 }
 
 func (c *Client) sendMsg(message []byte) {
-	c.hub.clientMsg <- wsMessageForSpecificClient{
+	c.hub.directMsg <- wsDirectMessage{
 		c:       c,
 		message: message,
 	}

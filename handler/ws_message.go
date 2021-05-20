@@ -23,7 +23,7 @@ type wsWelcomeMessage struct {
 	ClientId string `json:"clientId"`
 }
 
-type wsMessageForSpecificClient struct {
+type wsDirectMessage struct {
 	c       *Client
 	message []byte
 }

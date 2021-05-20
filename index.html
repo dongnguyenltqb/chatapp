@@ -1,260 +1,342 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<title>chatapp</title>
-<script type="text/javascript">
-    // for rtc
-    let iceCfg ={
-        iceServers: [
-            {urls:['turn:turn1.spiritlabs.co:3478'],username:"webrtc",credential:"webrtc"}
-        ]}
-    const constraints = {'video':true,'audio':true}
-    let localStream
-    let socketId
-    let roomName
-    let repo ={}
+    <title>chatapp</title>
+    <script type="text/javascript">
+        // for rtc
+        let iceCfg = {
+            iceServers: [
+                { urls: ['turn:turn1.spiritlabs.co:3478'], username: "webrtc", credential: "webrtc" }
+            ]
+        }
+        const constraints = {
+            audio: true,
+        }
+        let localStream = new MediaStream()
+        let socketId
+        let roomName
+        let repo = {}
 
+        // for ws connection
+        var conn;
+        const removeElement = (memberId) => document.getElementById("remoteVideo" + memberId)?.remove();
+        const removeMember = (memberId) => {
+            removeElement(memberId)
+            delete repo[memberId]
+        }
+        const startVideoCall = async () => {
+            document.getElementById('onWc').disabled = false
+            document.getElementById('ofWc').disabled = true
+            try {
+                console.log("startVideoCall run :", Object.keys(repo))
+                for (let memberId of Object.keys(repo))
+                    removeMember(memberId)
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                for(let track of stream.getTracks())
+                    localStream.addTrack(track,stream)
 
-    // for ws connection
-    var conn;
-            const removeElement = (memberId)=>document.getElementById("remoteVideo"+memberId)?.remove();
-            const removeMember = (memberId)=>{
-                removeElement(memberId)
-                delete repo[memberId]
-            }
-    const openMediaDevices = async () =>  {
-        try {
-            console.log("openMediaDevices run :",Object.keys(repo))
-            for(let memberId of Object.keys(repo)) 
-                removeMember(memberId)
-                localStream = await navigator.mediaDevices.getUserMedia(constraints);
-                    document.getElementById("yourStream").srcObject = localStream
-                    // emit join room event
-                    if(roomName)
+                document.getElementById("yourStream").srcObject = stream
+                // emit join room event
+                if (roomName)
                     conn.send(JSON.stringify({
-                            type:"joinRoomVideoCall",
-                        raw:{
-                                roomId :roomName
+                        type: "joinRoomVideoCall",
+                        raw: {
+                            roomId: roomName
                         }
                     }))
 
-        }
-        catch(err){
-            console.log(err)
-            return null
-        }
-
-
-    }
-
-            const updateStream = (memberId)=>{
-                if(localStream){
-                    console.log("push stream to : ",memberId)
-                    localStream.getTracks().forEach(track => {
-                        repo[memberId].addTrack(track, localStream);
-                    });
-                }
             }
-            const regIceEvent = (memberId)=>{
-                const elementId = 'remoteVideo'+memberId
-                let remoteVideo = document.getElementById(elementId);
-                if(!remoteVideo){
-                    remoteVideo  = document.createElement("VIDEO")
-                    remoteVideo.setAttribute("width", "300");
-                    remoteVideo.setAttribute("height", "150");
-                    remoteVideo.setAttribute("controls", "autoplay");
-                    remoteVideo.setAttribute("autoplay", "autoplay");
-                    document.getElementById("remoteVideos").appendChild(remoteVideo);
-                    remoteVideo.setAttribute("id",elementId)
-                }
-                
-                let peerConnection = repo[memberId]
-                peerConnection.addEventListener('icecandidate',event=>{
-                    if(event.candidate){
+            catch (err) {
+                console.log(err)
+                return null
+            }
+        }
+        const WebcamOn = async () => {
+                document.getElementById('onWc').disabled = true
+                document.getElementById('ofWc').disabled = false
+                if(!constraints.video) {
+                    constraints.video = {
+                        width:460,
+                        height:320
+                    }
+                    stream = await navigator.mediaDevices.getUserMedia(constraints);
+                    // stream = await navigator.mediaDevices.getDisplayMedia()
+                    let videoTracks = await stream.getVideoTracks()
+                    for(let track of videoTracks){
+                        localStream.addTrack(track)
+                    }
+                    document.getElementById("yourStream").srcObject = localStream
+
+                    for(let targetId of Object.keys(repo)){
+                        for(let track of localStream.getVideoTracks()){
+                            console.log(track)
+                            repo[targetId].addTrack(track,localStream)
+                        }
+                        let offer = await repo[targetId].createOffer()
+                        await repo[targetId].setLocalDescription(offer)
                         conn.send(JSON.stringify({
-                        type:'icecandidate',
-                        raw:{targetId:memberId,candidate:event.candidate}}))
-                    }
-                })
-                peerConnection.addEventListener('connectionstatechange', event => {
-                    if (peerConnection.connectionState === 'connected') {
-                        console.log("Peers connected")
-                    }
-                    if (peerConnection.connectionState === 'disconnected') {
-                        removeMember(memberId)
-                    }
-                });
-                const remoteStream = new MediaStream()
-                remoteVideo = document.getElementById(elementId)
-                remoteVideo.srcObject = remoteStream;
-                peerConnection.addEventListener('track', async (event) => {
-                    console.log("track from peer",event.track)
-                    remoteStream.addTrack(event.track, remoteStream);
-                });
-            } 
-
-
-window.onload = function () {
-    var msg = document.getElementById("msg");
-    var log = document.getElementById("log");
-
-    function appendLog(item) {
-    }
-
-    document.getElementById("form").onsubmit = function () {
-        if (!conn) {
-            return false;
-        }
-        if (!msg.value) {
-            return false;
-        }
-        conn.send(JSON.stringify({
-            type:"chat",
-            raw:{
-                text:msg.value
-            }
-        }))
-        msg.value = "";
-        return false;
-    };
-
-    if (window["WebSocket"]) {
-        let addr = (document.location.href.indexOf("https://")>=0 ? "wss://" : "ws://" )+ document.location.host + "/ws";
-        conn = new WebSocket(addr)
-        var a =[]
-        // for(let i=1;i<=400;i++){
-        //     a[i] =  new WebSocket(addr)
-        // }
-        conn.onclose = function (evt) {
-            alert("Connection closed",evt)
-        };
-        conn.onmessage = async function ({data}) {
-            var message = JSON.parse(data);
-            if(message.type =="chat"){
-                var item = document.createElement("div");
-                item.innerText =  message.raw.text
-                document.getElementById("chat").appendChild(item)
-            }
-            if(message.type ==="identity"){
-                socketId =  message.raw.clientId          
-                console.log("SocketId= ",socketId)
-            }
-            if(message.type ==="joinRoom"){
-                    let {memberId,ids} = message.raw
-                    console.log(memberId + " join room ", ids[0])
-            }
-            if(message.type =="joinRoomVideoCall"){
-                    let {memberId,ids} = message.raw
-                    if (socketId ==memberId) return
-                    console.log("calling :",memberId)
-                    removeMember(memberId)
-                    // Call now
-                    let peerConnection= new RTCPeerConnection(iceCfg)
-                    repo[memberId] = peerConnection
-                    regIceEvent(memberId)
-                    updateStream(memberId)
-                    const offer = await peerConnection.createOffer();
-                    await peerConnection.setLocalDescription(offer);
-                    conn.send(JSON.stringify({
-                            type:"offer",
-                            raw:{
-                                targetId :memberId,
-                                offer:offer
+                            type: "offer",
+                            raw: {
+                                targetId,
+                                offer: offer
                             }
                         }))
-                    console.log("da gui offer toi",memberId)
-            }
-            if(message.type ==="offer"){
-                    let {offer,targetId} =  message.raw
-                    console.log("got offer from :",targetId,offer)
-                    // nhan duoc offer tu nguoi khac
-                    let peerConnection=repo[targetId]
-                    if(!peerConnection) {
-                        peerConnection = new RTCPeerConnection(iceCfg) 
-                        repo[targetId] = peerConnection
-                            regIceEvent(targetId)
-                            updateStream(targetId)
-                    }
-                    peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-                    const answer = await peerConnection.createAnswer();
-                    await peerConnection.setLocalDescription(answer);
-                    // tra loi nguoi ta
-                    conn.send(JSON.stringify({
-                            type:"answer",
-                            raw:{
-                                    answer:answer,
-                                    targetId:targetId
-                                }
-                        }))
-                }
-            if(message.type ==="answer"){
-                    let {targetId,answer} =message.raw
-                    console.log("got answer from ",answer)
-                    // nhan duoc answer tu nguoi khac
-                    let peerConnection =repo[targetId]
-                    const remoteDesc = new RTCSessionDescription(answer);
-                    await peerConnection.setRemoteDescription(remoteDesc);
-
-            }
-            if(message.type ==="icecandidate"){
-                    let {targetId,candidate} =  message.raw
-                    repo[targetId].addIceCandidate(candidate)
+                    } 
                 }
                 
+        }
+        const WebcamOff = async () => {
+                    document.getElementById('onWc').disabled = false
+                    document.getElementById('ofWc').disabled = true
+                    delete constraints.video
+                    // update local stream
+                    for(let track of localStream.getVideoTracks()){
+                        track.stop()
+                        localStream.removeTrack(track)
+                    }
+                    document.getElementById("yourStream").srcObject = localStream
+
+                    // remove video sender
+                    for(let targetId of Object.keys(repo)){
+                        for(let sender of repo[targetId].getSenders()){
+                            if(sender.track && sender.track.kind =="video")
+                            repo[targetId].removeTrack(sender)
+                        }
+                        let offer = await repo[targetId].createOffer()
+                        await repo[targetId].setLocalDescription(offer)
+                        conn.send(JSON.stringify({
+                            type: "offer",
+                            raw: {
+                                targetId,
+                                offer: offer
+                            }
+                        }))
+                    } 
+        }
+
+        const updateStream = (memberId) => {
+            if (localStream) {
+                console.log("push stream to : ", memberId)
+                localStream.getTracks().forEach(track => {
+                    repo[memberId].addTrack(track, localStream);
+                });
+            }
+        }
+
+
+        const regIceEvent = (memberId) => {
+            const elementId = 'remoteVideo' + memberId
+            let remoteVideo = document.getElementById(elementId);
+            if (!remoteVideo) {
+                remoteVideo = document.createElement("VIDEO")
+                remoteVideo.setAttribute("width", "300");
+                remoteVideo.setAttribute("height", "150");
+                remoteVideo.setAttribute("controls", "autoplay");
+                remoteVideo.setAttribute("autoplay", "autoplay");
+                document.getElementById("remoteVideos").appendChild(remoteVideo);
+                remoteVideo.setAttribute("id", elementId)
+            }
+            repo[memberId].addEventListener('icecandidate', event => {
+                if (event.candidate) {
+                    conn.send(JSON.stringify({
+                        type: 'icecandidate',
+                        raw: { targetId: memberId, candidate: event.candidate }
+                    }))
+                }
+            })
+            repo[memberId].addEventListener('connectionstatechange', event => {
+                if (repo[memberId].connectionState === 'connected') {
+                    console.log("Peers connected")
+                }
+                if (repo[memberId].connectionState === 'disconnected') {
+                    removeMember(memberId)
+                }
+            });
+            const remoteStream = new MediaStream()
+            repo[memberId].addEventListener('track', async (event) => {
+                console.log("[RECEIVED TRACK] => ", event.track)
+                if(event.track.kind ==="video"){
+                    for(let track of remoteStream.getVideoTracks())
+                        remoteStream.removeTrack(track)
+                }
+                remoteStream.addTrack(event.track, remoteStream);
+                remoteVideo = document.getElementById(elementId)
+                remoteVideo.srcObject = remoteStream;
+            });
+        }
+
+
+        window.onload = function () {
+            var msg = document.getElementById("msg");
+            var log = document.getElementById("log");
+
+            function appendLog(item) {
+            }
+
+            document.getElementById("form").onsubmit = function () {
+                if (!conn) {
+                    return false;
+                }
+                if (!msg.value) {
+                    return false;
+                }
+                conn.send(JSON.stringify({
+                    type: "chat",
+                    raw: {
+                        text: msg.value
+                    }
+                }))
+                msg.value = "";
+                return false;
+            };
+
+            if (window["WebSocket"]) {
+                let addr = (document.location.href.indexOf("https://") >= 0 ? "wss://" : "ws://") + document.location.host + "/ws";
+                conn = new WebSocket(addr)
+                var a = []
+                // for(let i=1;i<=400;i++){
+                //     a[i] =  new WebSocket(addr)
+                // }
+                conn.onclose = function (evt) {
+                    alert("Connection closed", evt)
+                };
+                conn.onmessage = async function ({ data }) {
+                    var message = JSON.parse(data);
+                    if (message.type == "chat") {
+                        var item = document.createElement("div");
+                        item.innerText = message.raw.text
+                        document.getElementById("chat").appendChild(item)
+                    }
+                    if (message.type === "identity") {
+                        socketId = message.raw.clientId
+                        console.log("SocketId= ", socketId)
+                    }
+                    if (message.type === "joinRoom") {
+                        let { memberId, ids } = message.raw
+                        console.log(memberId + " join room ", ids[0])
+                    }
+                    if (message.type == "joinRoomVideoCall") {
+                        let { memberId, ids } = message.raw
+                        if (socketId == memberId) return
+                        console.log("calling :", memberId)
+                        removeMember(memberId)
+                        // Call now
+                        repo[memberId] =  new RTCPeerConnection(iceCfg)
+                        regIceEvent(memberId)
+                        updateStream(memberId)
+                        const offer = await repo[memberId].createOffer();
+                        await repo[memberId].setLocalDescription(offer);
+                        conn.send(JSON.stringify({
+                            type: "offer",
+                            raw: {
+                                targetId: memberId,
+                                offer: offer
+                            }
+                        }))
+                        console.log("da gui offer toi", memberId)
+                    }
+                    if (message.type === "offer") {
+                        let { offer, targetId } = message.raw
+                        console.log("got offer from :", targetId, offer)
+                        // nhan duoc offer tu nguoi khac
+                        let peerConnection = repo[targetId]
+                        if (!peerConnection) {
+                            peerConnection = new RTCPeerConnection(iceCfg)
+                            repo[targetId] = peerConnection
+                            regIceEvent(targetId)
+                            updateStream(targetId)
+                        }
+                        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+                        const answer = await peerConnection.createAnswer();
+                        await peerConnection.setLocalDescription(answer);
+                        // tra loi nguoi ta
+                        conn.send(JSON.stringify({
+                            type: "answer",
+                            raw: {
+                                answer: answer,
+                                targetId: targetId
+                            }
+                        }))
+                    }
+                    if (message.type === "answer") {
+                        let { targetId, answer } = message.raw
+                        console.log("got answer from ", answer)
+                        // nhan duoc answer tu nguoi khac
+                        let peerConnection = repo[targetId]
+                        const remoteDesc = new RTCSessionDescription(answer);
+                        await peerConnection.setRemoteDescription(remoteDesc);
+
+                    }
+                    if (message.type === "icecandidate") {
+                        let { targetId, candidate } = message.raw
+                        repo[targetId].addIceCandidate(candidate)
+                    }
+
+                };
+            } else {
+                var item = document.createElement("div");
+                item.innerHTML = "<b>Your browser does not support WebSockets.</b>";
+                appendLog(item);
+            }
         };
-    } else {
-        var item = document.createElement("div");
-        item.innerHTML = "<b>Your browser does not support WebSockets.</b>";
-        appendLog(item);
-    }
-};
-</script>
+    </script>
 </head>
+
 <body>
     <button onclick="myFunction(this)">#random</button>
-<script>
-function myFunction(e) {
-        let val = e.textContent
-    
-        conn.send(JSON.stringify({
-                type:"leaveRoom",
-                raw:{
-                        ids:["#random","#gaming","#general"]
-                    }
+    <script>
+        function myFunction(e) {
+            let val = e.textContent
+
+            conn.send(JSON.stringify({
+                type: "leaveRoom",
+                raw: {
+                    ids: ["#random", "#gaming", "#general"]
+                }
             }))
-        document.getElementById('tenroomdangjoin').innerHTML = "Current room: "+val;
-        roomName = val
-        // for(let i=1;i<=1000;i++)
-        setTimeout(()=>{
-        conn.send(JSON.stringify({
-                type:"joinRoom",
-                raw:{
-                        ids:[val]
+            document.getElementById('tenroomdangjoin').innerHTML = "Current room: " + val;
+            roomName = val
+            // for(let i=1;i<=1000;i++)
+            setTimeout(() => {
+                conn.send(JSON.stringify({
+                    type: "joinRoom",
+                    raw: {
+                        ids: [val]
                     }
-        })),
-    openMediaDevices()
+                })),
+                    startVideoCall()
 
 
-            },1000)
-}
-</script>
+            }, 1000)
+        }
+    </script>
 
-<p id ="tenroomdangjoin"> Current room:</p>
+    <p id="tenroomdangjoin"> Current room:</p>
     <div>
-        <p id = "identity"> Your: null</p>
-        <button onclick="openMediaDevices()">
-            Start
+        <p id="identity"> Your: null</p>
+        <button disabled id="onWc" onclick="WebcamOn()">
+            On webcam
         </button>
-        <video id ="yourStream" width="300" height="200" controls autoplay  muted></video>
+        <button disabled id="ofWc" onclick="WebcamOff()">
+            Off webcam
+        </button>
+       >
+        <video id="yourStream" width="300" height="200" controls autoplay muted></video>
     </div>
-    <div id ="remoteVideos">
+
+    <div id="remoteVideos">
         <p> List video nay la cua mot ai khac</p>
     </div>
+
+
+
     <div id="chat">
     </div>
-        <form id="form">
+    <form id="form">
         <input type="submit" value="Send" />
         <input type="text" id="msg" size="64" autofocus />
-    </div>
+        </div>
 </body>
+
 </html>
